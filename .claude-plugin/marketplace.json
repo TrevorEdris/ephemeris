@@ -1,0 +1,41 @@
+{
+  "name": "ephemeris",
+  "owner": {
+    "name": "Trevor Edris",
+    "email": "trevor.edris@gmail.com",
+    "url": "https://github.com/TrevorEdris"
+  },
+  "metadata": {
+    "description": "Ambient knowledge graph for Claude Code — ingests session artifacts, git history, and Jira tickets into a queryable temporal graph.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "ephemeris",
+      "source": ".",
+      "description": "Turn session artifacts, git history, and Jira tickets into a Graphiti-backed temporal knowledge graph. Ships /ingest, /render, /query, /lint skills plus UserPromptSubmit hooks.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Trevor Edris",
+        "email": "trevor.edris@gmail.com",
+        "url": "https://github.com/TrevorEdris"
+      },
+      "homepage": "https://github.com/TrevorEdris/ephemeris",
+      "repository": "https://github.com/TrevorEdris/ephemeris",
+      "license": "MIT",
+      "keywords": [
+        "knowledge-graph",
+        "graphiti",
+        "temporal",
+        "session-docs",
+        "jira",
+        "git-history",
+        "workflow",
+        "memory",
+        "qrspi"
+      ],
+      "category": "productivity",
+      "strict": true
+    }
+  ]
+}
