@@ -1,0 +1,8 @@
+{
+  "name": "ephemeris",
+  "description": "Ambient knowledge system — session artifacts, git history, and Jira tickets into a temporal knowledge graph",
+  "version": "0.1.0",
+  "author": {
+    "name": "TrevorEdris"
+  }
+}
