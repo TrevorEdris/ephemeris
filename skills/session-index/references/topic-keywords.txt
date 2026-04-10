@@ -1,0 +1,31 @@
+# Topic keywords for session index grouping.
+# One keyword per line. Lines starting with # are ignored. Blank lines are ignored.
+# Matching is case-insensitive substring against the session title slug.
+# Customize this file for your organization's domain vocabulary.
+
+# General development
+ci-cd
+config
+docker
+migration
+monitoring
+security
+terraform
+review
+
+# AI tooling
+claude
+mcp
+jira
+persona
+playwright
+workflow
+
+# Data
+airflow
+databricks
+
+# Communication
+oauth
+slack
+webhook
