@@ -19,7 +19,16 @@ Ambient knowledge system for Claude Code — session artifacts, git history, and
 
 ## Install
 
-Clone and install as a Claude Code plugin:
+### Option A — Marketplace (recommended)
+
+The repo self-hosts a single-plugin marketplace via `.claude-plugin/marketplace.json`, so you can install directly from GitHub without cloning:
+
+```
+/plugin marketplace add TrevorEdris/ephemeris
+/plugin install ephemeris@ephemeris
+```
+
+### Option B — Local clone
 
 ```bash
 gh repo clone TrevorEdris/ephemeris ~/src/github.com/TrevorEdris/ephemeris
