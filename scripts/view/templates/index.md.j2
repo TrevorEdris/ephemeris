@@ -1,0 +1,18 @@
+---
+type: index
+generated: {{ generated }}
+total_pages: {{ total }}
+---
+
+> This file is a generated index. The source of truth is Graphiti.
+
+# ephemeris wiki
+
+Generated {{ generated }} from group `{{ group_id }}`.
+
+{% for entity_type, pages in by_type.items() %}## {{ entity_type }} ({{ pages|length }})
+
+{% for p in pages %}- [{{ p.title }}]({{ p.href }})
+{% endfor %}
+
+{% endfor %}

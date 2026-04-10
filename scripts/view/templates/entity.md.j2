@@ -1,0 +1,24 @@
+---
+type: {{ entity_type }}
+tags: [{{ group_id }}{% for t in tags %}, {{ t }}{% endfor %}]
+generated: {{ generated }}
+graph_query: "{{ graph_query }}"
+source_uuid: "{{ source_uuid }}"
+---
+
+> This file is a generated view. The source of truth is Graphiti.
+> Regenerate with `/render` or `python scripts/view/render.py`.
+
+# {{ title }}
+
+{% if summary %}{{ summary }}
+
+{% endif %}{% if fields %}## Fields
+
+{% for key, value in fields.items() %}- **{{ key }}**: {{ value }}
+{% endfor %}
+{% endif %}{% if related %}## Related
+
+{% for r in related %}- [{{ r.label }}]({{ r.href }}) — {{ r.relation }}
+{% endfor %}
+{% endif %}
