@@ -14,20 +14,24 @@ Graphiti uses `gpt-4o-mini` by default — a reasonable baseline for structured 
 
 ### Anthropic
 
-Pass an `AnthropicClient` at Graphiti init:
-
-```python
-from graphiti_core import Graphiti
-from graphiti_core.llm_client.anthropic_client import AnthropicClient
-
-graphiti = Graphiti(driver, llm_client=AnthropicClient())
-```
-
-Set the key:
-
 ```bash
+pip install 'graphiti-core[anthropic]'
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+`scripts/ingest/graphiti_client.py` auto-detects `ANTHROPIC_API_KEY` and wires `AnthropicClient()` for reasoning. No code changes needed.
+
+Force a specific provider regardless of which keys are set:
+
+```bash
+export EPHEMERIS_LLM_PROVIDER=openai    # or anthropic
+```
+
+**Embedder caveat:** Anthropic does not offer embeddings. Graphiti's default embedder is OpenAI, so an Anthropic-reasoning setup still needs `OPENAI_API_KEY` unless you swap in a different embedder (e.g., Ollama + sentence-transformers). Selection order:
+
+1. `EPHEMERIS_LLM_PROVIDER` wins if set (`anthropic` or `openai`)
+2. else `ANTHROPIC_API_KEY` set → `anthropic`
+3. else → `openai`
 
 ### Model Selection for Batch Ingest
 
@@ -125,6 +129,7 @@ See [mcp-config.md](mcp-config.md).
 | Variable | Default | Used by |
 |---|---|---|
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | — | All `add_episode` calls (LLM extraction) |
+| `EPHEMERIS_LLM_PROVIDER` | auto-detect | Force `anthropic` or `openai` regardless of which keys are set |
 | `EPHEMERIS_DB_PATH` | `~/.ai/ephemeris/db` | Kuzu driver (`scripts/ingest/graphiti_client.py`) |
 | `EPHEMERIS_STATE_ROOT` | `~/.ai/ephemeris/state` | `mark_ingested()` + `hooks/session_ingest.py` (ingest dedup) |
 | `EPHEMERIS_SESSIONS_ROOT` | `~/src/.ai/sessions` | `hooks/workflow_phase_reminder.py`, `hooks/session_ingest.py` |

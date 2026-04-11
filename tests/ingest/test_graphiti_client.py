@@ -8,11 +8,14 @@ deterministic paths.
 import os
 from pathlib import Path
 
+import pytest
+
 from ingest.graphiti_client import (
     DEFAULT_DB_PATH,
     STATE_DIR,
     default_db_path,
     ensure_state_dir,
+    llm_client_kind,
 )
 
 
@@ -51,3 +54,58 @@ def test_ensure_state_dir_creates_dir(tmp_path, monkeypatch):
 
 def test_state_dir_constant_under_home():
     assert str(STATE_DIR).endswith(".ai/ephemeris/state")
+
+
+# --- llm_client_kind --------------------------------------------------------
+
+
+def _clear_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ("EPHEMERIS_LLM_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_llm_client_kind_defaults_to_openai_when_nothing_set(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    assert llm_client_kind() == "openai"
+
+
+def test_llm_client_kind_picks_anthropic_when_only_anthropic_key_set(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    assert llm_client_kind() == "anthropic"
+
+
+def test_llm_client_kind_picks_openai_when_only_openai_key_set(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert llm_client_kind() == "openai"
+
+
+def test_llm_client_kind_prefers_anthropic_when_both_keys_set(monkeypatch):
+    """Both keys is the common case for users who want Claude reasoning +
+    OpenAI embeddings. Anthropic wins for reasoning because the user
+    opting in to the Anthropic key is the explicit signal."""
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert llm_client_kind() == "anthropic"
+
+
+def test_llm_client_kind_explicit_override_wins(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("EPHEMERIS_LLM_PROVIDER", "openai")
+    assert llm_client_kind() == "openai"
+
+
+def test_llm_client_kind_explicit_override_is_case_insensitive(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("EPHEMERIS_LLM_PROVIDER", "AnThRoPiC")
+    assert llm_client_kind() == "anthropic"
+
+
+def test_llm_client_kind_rejects_unknown_provider(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("EPHEMERIS_LLM_PROVIDER", "bard")
+    with pytest.raises(ValueError, match="bard"):
+        llm_client_kind()
