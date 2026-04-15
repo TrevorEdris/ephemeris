@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from _lib.payload import read_payload  # noqa: E402
 from _lib.staging_root import resolve_staging_root  # noqa: E402
+from ephemeris.scope import is_in_scope, load_scope_config  # noqa: E402
 
 HOOK_TYPE = "session-end"
 
@@ -69,6 +70,16 @@ def _spawn_ingestion() -> None:
 
 def main() -> None:
     payload = read_payload()
+
+    # Scope check — runs immediately after payload parse, before any capture.
+    # Reads scope.json on every invocation (hot-reload guarantee — AC-4).
+    # Falls back to all-capture if config is absent or invalid (AC-1, AC-5).
+    scope = load_scope_config()
+    cwd = payload.get("cwd", "") if isinstance(payload, dict) else ""
+    if not is_in_scope(cwd, scope):
+        # Silent skip — no error surfaced to user (SPEC-007 AC-6).
+        print(json.dumps({"status": "skipped", "reason": "out_of_scope"}))
+        return
 
     staging_root = resolve_staging_root()
     if staging_root is None:

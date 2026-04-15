@@ -3,7 +3,7 @@
 **Feature ID:** P2-A
 **Size:** SMALL
 **Risk:** LOW
-**Status:** DRAFT
+**Status:** IMPLEMENTED
 
 ## Problem Statement
 

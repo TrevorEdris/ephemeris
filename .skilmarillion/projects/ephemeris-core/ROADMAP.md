@@ -2,13 +2,14 @@
 
 ## Current Status
 
-**Phase:** 1 — In Progress
-**Last Updated:** 2026-04-15 (PR #11 — P1-B SPEC-006 implemented)
+**Phase:** 2 — In Progress
+**Last Updated:** 2026-04-15 (PR #12 — P2-A SPEC-007 implemented)
 **P0-B Completed:** 2026-04-15
 **P0-C Completed:** 2026-04-15
 **P0-D Completed:** 2026-04-15
 **P1-A Completed:** 2026-04-15
 **P1-B Completed:** 2026-04-15
+**P2-A Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
@@ -17,6 +18,7 @@
 - [x] P0-D: Incremental Update + Contradiction Detection (feat/spec-004-incremental-update, PR #9 https://github.com/TrevorEdris/ephemeris/pull/9)
 - [x] P1-A: Manual Ingest Trigger (feat/spec-005-manual-ingest-trigger, PR #10)
 - [x] P1-B: Wiki Query (feat/spec-006-wiki-query, PR #11)
+- [x] P2-A: Capture Scope Configuration (feat/spec-007-capture-scope-config, PR #12)
 
 ### In Progress
 *(none)*
@@ -134,16 +136,16 @@ Build the silent loop first and prove it. No visible surface until background in
 
 **Exit Criteria:** Users can configure what gets captured and optionally provide a custom schema that governs wiki structure.
 
-### P2-A: Capture Scope Configuration
+### P2-A: Capture Scope Configuration ✓ IMPLEMENTED
 
 - **What:** A configuration file lets users specify include/exclude rules for which projects, paths, or topics are captured during ingestion.
 - **Depends on:** P1-A, P1-B
 - **Risk:** Scope filtering that is too coarse will silently drop valuable context; needs clear documentation of what the rules match against.
 - **Checklist:**
-  - [ ] Define configuration file format for include/exclude rules (plain text or YAML)
-  - [ ] Apply scope rules during ingestion to filter session content
-  - [ ] Verify scope changes take effect on the next ingestion pass with no plugin restart
-  - [ ] Verify excluded content is not ingested into the wiki
+  - [x] Define configuration file format for include/exclude rules (JSON — see translation note)
+  - [x] Apply scope rules during ingestion to filter session content
+  - [x] Verify scope changes take effect on the next ingestion pass with no plugin restart
+  - [x] Verify excluded content is not ingested into the wiki
 
 ### P2-B: Custom Wiki Schema
 
@@ -212,7 +214,7 @@ P0-A (scaffolding)
 | SPEC-004 | Incremental Update + Contradiction Detection | IMPLEMENTED | 0 | P0-D |
 | SPEC-005 | Manual Ingest Trigger | IMPLEMENTED | 1 | P1-A |
 | SPEC-006 | Wiki Query | IMPLEMENTED | 1 | P1-B |
-| SPEC-007 | Capture Scope Configuration | DRAFT | 2 | P2-A |
+| SPEC-007 | Capture Scope Configuration | IMPLEMENTED | 2 | P2-A |
 | SPEC-008 | Custom Wiki Schema | DRAFT | 2 | P2-B |
 
 ---
