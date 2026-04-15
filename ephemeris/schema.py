@@ -233,60 +233,32 @@ def resolve_schema(
     Invalid cases (empty, binary, > 64 KB) are skipped silently for levels 3-4;
     levels 1-2 log a single debug message and fall through to the next level.
 
+    No side effects beyond debug logging. Never raises.
+
     Args:
         wiki_root: Root directory of the wiki. Used for level-3 lookup.
         user_schema_path: Optional explicit path to a user schema file
             (e.g., ``~/.claude/ephemeris/schema.md``). Used as level 2.
 
     Returns:
-        Schema text to embed in the ingestion prompt. Never raises.
+        Schema text to embed in the ingestion prompt.
     """
     # Level 1: EPHEMERIS_SCHEMA_PATH env var
     env_path_str = os.environ.get("EPHEMERIS_SCHEMA_PATH", "")
     if env_path_str:
         env_path = Path(env_path_str).expanduser()
-        if env_path.exists():
-            size = _safe_size(env_path)
-            if size is not None and size > _MAX_SCHEMA_SIZE:
-                _log.debug(
-                    "EPHEMERIS_SCHEMA_PATH %s skipped: size %d bytes exceeds 64 KB limit",
-                    env_path,
-                    size,
-                )
-            else:
-                content = _safe_read(env_path)
-                if content is None:
-                    _log.debug(
-                        "EPHEMERIS_SCHEMA_PATH %s skipped: could not decode as UTF-8",
-                        env_path,
-                    )
-                elif content:
-                    return content
-                # empty → fall through silently
+        result = _try_load_with_logging(env_path, label="EPHEMERIS_SCHEMA_PATH")
+        if result is not None:
+            return result
 
     # Level 2: explicit user_schema_path argument
     if user_schema_path is not None:
         path = user_schema_path.expanduser() if not user_schema_path.is_absolute() else user_schema_path
-        if path.exists():
-            size = _safe_size(path)
-            if size is not None and size > _MAX_SCHEMA_SIZE:
-                _log.debug(
-                    "User schema %s skipped: size %d bytes exceeds 64 KB limit",
-                    path,
-                    size,
-                )
-            else:
-                content = _safe_read(path)
-                if content is None:
-                    _log.debug(
-                        "User schema %s skipped: could not decode as UTF-8",
-                        path,
-                    )
-                elif content:
-                    return content
-                # empty → fall through silently
+        result = _try_load_with_logging(path, label="User schema")
+        if result is not None:
+            return result
 
-    # Level 3: wiki_root/SCHEMA.md
+    # Level 3: wiki_root/SCHEMA.md (silent fallthrough on any error)
     wiki_schema = wiki_root / "SCHEMA.md"
     if wiki_schema.exists():
         try:
@@ -294,7 +266,7 @@ def resolve_schema(
             if content.strip():
                 return content
         except (UnicodeDecodeError, OSError):
-            pass  # fall through to default
+            pass
 
     # Level 4: embedded DEFAULT_SCHEMA
     return DEFAULT_SCHEMA
@@ -314,6 +286,50 @@ def _safe_read(path: Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError):
         return None
+
+
+def _try_load_with_logging(path: Path, label: str) -> str | None:
+    """Attempt to load a schema file, logging debug messages on failure.
+
+    Returns the file content if the file exists, is non-empty, valid UTF-8,
+    and does not exceed _MAX_SCHEMA_SIZE. Returns None and logs a debug
+    message for oversized or undecodable files. Returns None silently for
+    absent or empty files.
+
+    Args:
+        path: Path to the candidate schema file.
+        label: Human-readable label used in debug messages (e.g. "User schema").
+
+    Returns:
+        File content string, or None if the file should be skipped.
+    """
+    if not path.exists():
+        return None
+
+    size = _safe_size(path)
+    if size is not None and size > _MAX_SCHEMA_SIZE:
+        _log.debug(
+            "%s %s skipped: size %d bytes exceeds %d KB limit",
+            label,
+            path,
+            size,
+            _MAX_SCHEMA_SIZE // 1024,
+        )
+        return None
+
+    content = _safe_read(path)
+    if content is None:
+        _log.debug(
+            "%s %s skipped: could not decode as UTF-8",
+            label,
+            path,
+        )
+        return None
+
+    if not content.strip():
+        return None  # empty file → silent fallthrough
+
+    return content
 
 
 def bootstrap_schema(wiki_root: Path) -> None:
