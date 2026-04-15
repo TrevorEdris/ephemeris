@@ -79,7 +79,18 @@ def load_scope_config(path: Optional[Path] = None) -> ScopeConfig:
     """
     if path is None:
         env_path = os.environ.get("EPHEMERIS_SCOPE_CONFIG")
-        config_path = Path(env_path).expanduser() if env_path else _DEFAULT_SCOPE_CONFIG
+        if env_path:
+            candidate = Path(env_path)
+            if not candidate.is_absolute():
+                logger.warning(
+                    "ephemeris.scope: EPHEMERIS_SCOPE_CONFIG must be an absolute path; "
+                    "got relative path %r — ignoring and using all-capture default",
+                    env_path,
+                )
+                return ScopeConfig()
+            config_path = candidate.expanduser()
+        else:
+            config_path = _DEFAULT_SCOPE_CONFIG
     else:
         config_path = path
 
@@ -165,7 +176,7 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
             # Escape all regex metacharacters so literals are treated as literals.
             regex_parts.append(re.escape(token))
 
-    return re.compile("".join(regex_parts))
+    return re.compile("^" + "".join(regex_parts) + "$")
 
 
 def _matches_any(cwd: str, patterns: list[str]) -> bool:
