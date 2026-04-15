@@ -267,6 +267,7 @@ def test_capture_large_transcript_no_truncation(tmp_path: Path) -> None:
     assert len(captured_bytes) == len(jsonl_content), (
         f"Truncation detected: expected {len(jsonl_content)} bytes, got {len(captured_bytes)}"
     )
+    assert captured_bytes == jsonl_content, "Byte content mismatch: captured data differs from source"
 
 
 # ---------------------------------------------------------------------------
