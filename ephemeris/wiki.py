@@ -368,6 +368,35 @@ def _add_back_link(ref_path: Path, source_page: Path, wiki_root: Path) -> None:
             pass
 
 
+def _load_page(op: "PageOperation", wiki_root: Path) -> str | None:
+    """Return the existing page content for ``op``, or None if not found.
+
+    Only topic and entity pages are checked; decisions always append.
+
+    Args:
+        op: PageOperation to look up.
+        wiki_root: Root directory of the wiki.
+
+    Returns:
+        Page text as a string, or None if the page does not yet exist.
+    """
+    if op.page_type == "topic":
+        safe_name = _sanitize_page_name(op.page_name)
+        page_path = wiki_root / "topics" / f"{safe_name}.md"
+    elif op.page_type == "entity":
+        safe_name = _sanitize_page_name(op.page_name)
+        page_path = wiki_root / "entities" / f"{safe_name}.md"
+    else:
+        return None
+
+    if not page_path.exists():
+        return None
+    try:
+        return page_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def _title(kebab_name: str) -> str:
     """Convert a kebab-case page name to a human-readable title."""
     return kebab_name.replace("-", " ").title()

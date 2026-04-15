@@ -4,6 +4,8 @@ Abstracts the model invocation layer so tests can use FakeModelClient
 without importing the Anthropic SDK at all.
 
 Public API:
+    ConflictPair          — dataclass for a contradicting claim pair
+    MergeResult           — dataclass for merge operation result
     ModelClient           — Protocol (structural typing, no inheritance required)
     AnthropicModelClient  — Production client; lazy-imports anthropic in __init__
     FakeModelClient       — Test double; returns a canned response
@@ -15,18 +17,55 @@ Environment:
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     pass
+
+
+@dataclass
+class ConflictPair:
+    """A pair of contradicting claims between two sessions.
+
+    Attributes:
+        existing_claim: The claim already present in the wiki page.
+        new_claim: The contradicting claim from the new session.
+        existing_session_id: Session that produced the existing claim.
+        new_session_id: Session that produced the new contradicting claim.
+    """
+
+    existing_claim: str
+    new_claim: str
+    existing_session_id: str
+    new_session_id: str
+
+
+@dataclass
+class MergeResult:
+    """Result of a merge_topic model call.
+
+    Attributes:
+        additions: Net-new claims/content to append to the existing page.
+        duplicates: Claims already present in the page; discard.
+        conflicts: Contradicting claim pairs to surface as inline conflict blocks.
+        affirmed_claim: If the model resolved an existing conflict by affirming
+                        one side, this holds the affirmed text. Empty string if
+                        no resolution occurred.
+    """
+
+    additions: list[str]
+    duplicates: list[str]
+    conflicts: list[ConflictPair]
+    affirmed_claim: str = ""
 
 
 @runtime_checkable
 class ModelClient(Protocol):
     """Protocol for model invocation.
 
-    Any object with an ``invoke(system_prompt, user_prompt) -> str`` method
-    satisfies this protocol — no inheritance required.
+    Any object with ``invoke`` and ``merge_topic`` methods satisfies this
+    protocol — no inheritance required.
     """
 
     def invoke(self, system_prompt: str, user_prompt: str) -> str:
@@ -41,6 +80,27 @@ class ModelClient(Protocol):
 
         Raises:
             ModelClientError: If the invocation fails for any reason.
+        """
+        ...
+
+    def merge_topic(self, existing: str, new: str, session_id: str) -> MergeResult:
+        """Merge new session content into an existing wiki page.
+
+        The model categorises each piece of new content as one of:
+        - MERGE: net-new addition to append.
+        - DUPLICATE: already present in existing content; discard.
+        - CONFLICT: directly contradicts an existing claim; surface inline.
+
+        Args:
+            existing: Current content of the wiki page.
+            new: New session content to integrate.
+            session_id: Session identifier for the new content (for citation).
+
+        Returns:
+            MergeResult with additions, duplicates, and conflicts categorised.
+
+        Raises:
+            ModelClientError: If the invocation fails.
         """
         ...
 
@@ -106,20 +166,76 @@ class AnthropicModelClient:
         except Exception as exc:
             raise ModelClientError(f"Anthropic API call failed: {exc}") from exc
 
+    def merge_topic(self, existing: str, new: str, session_id: str) -> "MergeResult":
+        """Call the Anthropic API to merge new session content into existing page.
+
+        Args:
+            existing: Current wiki page content.
+            new: New session content to integrate.
+            session_id: New session identifier.
+
+        Returns:
+            MergeResult with additions, duplicates, and conflicts.
+
+        Raises:
+            ModelClientError: On API error or parse failure.
+        """
+        from ephemeris.exceptions import ModelClientError
+        from ephemeris.prompts import (
+            _MERGE_SYSTEM_PROMPT,
+            build_merge_prompt,
+            parse_merge_response,
+        )
+
+        user_prompt = build_merge_prompt(existing, new, session_id)
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=2048,
+                system=[
+                    {
+                        "type": "text",
+                        "text": _MERGE_SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            raw = response.content[0].text  # type: ignore[union-attr]
+        except Exception as exc:
+            raise ModelClientError(f"Anthropic merge API call failed: {exc}") from exc
+
+        # We don't know the existing_session_id here; use a placeholder
+        return parse_merge_response(raw, session_id, existing_session_id="unknown")
+
 
 class FakeModelClient:
     """Test double for ModelClient.
 
-    Returns a pre-configured canned response string regardless of input.
+    Returns pre-configured canned responses regardless of input.
     Never imports the ``anthropic`` package.
 
     Args:
         response: String to return from ``invoke``. Defaults to empty JSON
             operations list ``{"operations": []}``.
+        merge_result: MergeResult to return from ``merge_topic``. Defaults to
+            an empty MergeResult (no additions, no duplicates, no conflicts).
     """
 
-    def __init__(self, response: str = '{"operations": []}') -> None:
+    def __init__(
+        self,
+        response: str = '{"operations": []}',
+        merge_result: Optional[MergeResult] = None,
+    ) -> None:
         self._response = response
+        self._merge_result = merge_result or MergeResult(
+            additions=[], duplicates=[], conflicts=[]
+        )
 
     def invoke(self, system_prompt: str, user_prompt: str) -> str:  # noqa: ARG002
         return self._response
+
+    def merge_topic(  # noqa: ARG002
+        self, existing: str, new: str, session_id: str
+    ) -> MergeResult:
+        return self._merge_result
