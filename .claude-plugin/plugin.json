@@ -1,0 +1,22 @@
+{
+  "name": "ephemeris",
+  "description": "Silent session wiki: automatically captures and persists knowledge from every Claude Code session into a local markdown wiki — zero configuration required.",
+  "version": "0.1.0",
+  "author": {
+    "name": "TrevorEdris",
+    "url": "https://github.com/TrevorEdris"
+  },
+  "homepage": "https://github.com/TrevorEdris/ephemeris",
+  "repository": "https://github.com/TrevorEdris/ephemeris",
+  "license": "MIT",
+  "keywords": [
+    "session",
+    "wiki",
+    "knowledge",
+    "memory",
+    "lifecycle",
+    "hooks",
+    "context",
+    "ingestion"
+  ]
+}
