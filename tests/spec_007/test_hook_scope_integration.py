@@ -391,6 +391,107 @@ class TestPreCompactScopeIntegration:
             output = _run_hook("pre_compact", payload, {}, monkeypatch)
 
         assert call_count["n"] == 0
+        # MINOR 2: mirror the filesystem check from the analogous post_session test
+        assert not staging_root.exists() or not any(staging_root.rglob("*.jsonl"))
         result = json.loads(output)
         assert result.get("status") == "skipped"
         assert result.get("reason") == "out_of_scope"
+
+    # MINOR 3 — pre_compact + include non-match integration test
+    def test_pre_compact_skip_when_cwd_not_in_include(
+        self, tmp_path, monkeypatch
+    ):
+        """Include rule for /allowed/**, cwd is /notallowed/ → capture not called, no staging files."""
+        scope_file = tmp_path / "scope.json"
+        scope_file.write_text(
+            json.dumps({"include": ["/allowed/**"], "exclude": []}), encoding="utf-8"
+        )
+
+        payload = _make_payload(tmp_path, cwd="/notallowed/project")
+        staging_root = tmp_path / "staging"
+
+        call_count = {"n": 0}
+
+        def spy_capture(*args, **kwargs):
+            call_count["n"] += 1
+
+        monkeypatch.setenv("EPHEMERIS_STAGING_ROOT", str(staging_root))
+        monkeypatch.setenv("EPHEMERIS_SCOPE_CONFIG", str(scope_file))
+        monkeypatch.setenv("EPHEMERIS_INGEST_ON_CAPTURE", "0")
+
+        with patch("ephemeris.capture.capture", side_effect=spy_capture):
+            _run_hook("pre_compact", payload, {}, monkeypatch)
+
+        assert call_count["n"] == 0
+        assert not staging_root.exists() or not any(staging_root.rglob("*.jsonl"))
+
+    # MINOR 6a — pre_compact hot-reload
+    def test_pre_compact_hot_reload_between_invocations(
+        self, tmp_path, monkeypatch
+    ):
+        """First call with empty config → capture. Write exclude. Second call → skip."""
+        scope_file = tmp_path / "scope.json"
+        scope_file.write_text(json.dumps({}), encoding="utf-8")
+
+        payload = _make_payload(tmp_path, cwd="/work/project")
+        staging_root = tmp_path / "staging"
+
+        call_counts = {"n": 0}
+        original_capture = __import__("ephemeris.capture", fromlist=["capture"]).capture
+
+        def spy_capture(*args, **kwargs):
+            call_counts["n"] += 1
+            return original_capture(*args, **kwargs)
+
+        monkeypatch.setenv("EPHEMERIS_STAGING_ROOT", str(staging_root))
+        monkeypatch.setenv("EPHEMERIS_SCOPE_CONFIG", str(scope_file))
+        monkeypatch.setenv("EPHEMERIS_INGEST_ON_CAPTURE", "0")
+
+        # First invocation — should capture
+        with patch("ephemeris.capture.capture", side_effect=spy_capture):
+            _run_hook("pre_compact", payload, {}, monkeypatch)
+        assert call_counts["n"] == 1
+
+        # Update config to exclude /work/**
+        scope_file.write_text(
+            json.dumps({"exclude": ["/work/**"]}), encoding="utf-8"
+        )
+
+        # Second invocation — should skip (hot-reload picks up new config)
+        with patch("ephemeris.capture.capture", side_effect=spy_capture):
+            _run_hook("pre_compact", payload, {}, monkeypatch)
+        assert call_counts["n"] == 1  # unchanged — capture was not called again
+
+    # MINOR 6b — pre_compact invalid JSON fallback
+    def test_pre_compact_invalid_json_fallback(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """Invalid JSON in scope config → capture IS called + warning logged."""
+        import logging
+
+        bad_scope_file = tmp_path / "scope.json"
+        bad_scope_file.write_text("not-valid-json{{{", encoding="utf-8")
+
+        payload = _make_payload(tmp_path, cwd="/work/project")
+        staging_root = tmp_path / "staging"
+
+        call_count = {"n": 0}
+        original_capture = __import__("ephemeris.capture", fromlist=["capture"]).capture
+
+        def spy_capture(*args, **kwargs):
+            call_count["n"] += 1
+            return original_capture(*args, **kwargs)
+
+        monkeypatch.setenv("EPHEMERIS_STAGING_ROOT", str(staging_root))
+        monkeypatch.setenv("EPHEMERIS_SCOPE_CONFIG", str(bad_scope_file))
+        monkeypatch.setenv("EPHEMERIS_INGEST_ON_CAPTURE", "0")
+
+        with caplog.at_level(logging.WARNING, logger="ephemeris.scope"):
+            with patch("ephemeris.capture.capture", side_effect=spy_capture):
+                _run_hook("pre_compact", payload, {}, monkeypatch)
+
+        assert call_count["n"] == 1
+        assert any(
+            "invalid JSON" in rec.message or "invalid json" in rec.message.lower()
+            for rec in caplog.records
+        ), f"Expected warning, got: {[r.message for r in caplog.records]}"

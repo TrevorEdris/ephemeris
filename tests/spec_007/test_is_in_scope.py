@@ -203,3 +203,62 @@ class TestIsInScopeGlobEscapesRegexMetachars:
         cfg = ScopeConfig(include=["/my(project)/**"], exclude=[])
         assert is_in_scope("/my(project)/src", cfg) is True
         assert is_in_scope("/myproject/src", cfg) is False
+
+
+# ---------------------------------------------------------------------------
+# MAJOR — regex anchor contract (_glob_to_regex returns anchored pattern)
+# ---------------------------------------------------------------------------
+
+class TestGlobToRegexAnchored:
+    """_glob_to_regex docstring promises anchoring at both ends (fullmatch semantics).
+    The compiled re.Pattern must carry explicit ^ and $ so .search() also anchors.
+    """
+
+    def test_glob_to_regex_anchored_with_search(self):
+        """RED: _glob_to_regex('/work/**').search('/notwork/prefix/work/project') must be None.
+
+        Without ^ and $ anchors, .search() finds a partial match inside the string
+        and returns a match object instead of None.
+        """
+        from ephemeris.scope import _glob_to_regex
+
+        pattern = _glob_to_regex("/work/**")
+        # A string that contains '/work/project' as a substring but should NOT match
+        # because the cwd does not START with /work/.
+        assert pattern.search("/notwork/prefix/work/project") is None, (
+            "_glob_to_regex must anchor pattern with ^ and $ so .search() "
+            "does not yield false positives on substrings"
+        )
+
+
+# ---------------------------------------------------------------------------
+# MINOR 1 — mid-path ** test
+# ---------------------------------------------------------------------------
+
+class TestIsInScopeMidPathStarStar:
+    """Verify ** matches correctly in mid-path position."""
+
+    def test_mid_path_star_star_matches(self):
+        """ScopeConfig(include=['/a/**/b']) matches /a/x/y/b."""
+        from ephemeris.scope import ScopeConfig, is_in_scope
+
+        cfg = ScopeConfig(include=["/a/**/b"], exclude=[])
+        assert is_in_scope("/a/x/y/b", cfg) is True
+
+
+# ---------------------------------------------------------------------------
+# MINOR 5 — ** zero-segment behavior pin
+# ---------------------------------------------------------------------------
+
+class TestStarStarZeroSegment:
+    """Pin the contract: /a/** does NOT match /a (zero segments after /a/)."""
+
+    def test_star_star_does_not_match_zero_segment(self):
+        """ScopeConfig(include=['/a/**']) must NOT match /a itself (zero-segment)."""
+        from ephemeris.scope import ScopeConfig, is_in_scope
+
+        cfg = ScopeConfig(include=["/a/**"], exclude=[])
+        assert is_in_scope("/a", cfg) is False, (
+            "/a/** uses .+ (one-or-more) for **, so /a with zero trailing "
+            "segments must be out of scope — this is the pinned contract"
+        )

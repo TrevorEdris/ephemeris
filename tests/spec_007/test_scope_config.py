@@ -230,3 +230,32 @@ class TestLoadScopeConfigExplicitPath:
 
         cfg = load_scope_config(path=explicit_file)
         assert cfg == ScopeConfig(include=["/explicit/**"], exclude=[])
+
+
+# ---------------------------------------------------------------------------
+# MINOR 4 — EPHEMERIS_SCOPE_CONFIG must be absolute path
+# ---------------------------------------------------------------------------
+
+class TestLoadScopeConfigRelativePathRejected:
+    """EPHEMERIS_SCOPE_CONFIG set to a relative path → warning logged, all-capture returned."""
+
+    def test_relative_env_path_logs_warning_and_returns_empty(
+        self, monkeypatch, caplog
+    ):
+        """RED: relative EPHEMERIS_SCOPE_CONFIG ('relative/scope.json') must be rejected
+        with a warning and fall back to ScopeConfig() (all-capture default).
+        """
+        from ephemeris.scope import ScopeConfig, load_scope_config
+
+        monkeypatch.setenv("EPHEMERIS_SCOPE_CONFIG", "relative/scope.json")
+
+        with caplog.at_level(logging.WARNING, logger="ephemeris.scope"):
+            cfg = load_scope_config()
+
+        assert cfg == ScopeConfig(include=[], exclude=[]), (
+            "Relative EPHEMERIS_SCOPE_CONFIG must fall back to all-capture default"
+        )
+        assert any(
+            "relative" in rec.message.lower() or "absolute" in rec.message.lower()
+            for rec in caplog.records
+        ), f"Expected warning about relative/non-absolute path, got: {[r.message for r in caplog.records]}"
