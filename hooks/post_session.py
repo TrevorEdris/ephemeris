@@ -6,6 +6,10 @@ Reads the JSON payload from stdin and exits 0. No ingestion logic yet.
 Ingestion logic lands in SPEC-002/SPEC-003.
 """
 
+# SessionEnd payload carries transcript_path (str) — a filesystem path to a
+# JSONL file, not an embedded transcript array. SPEC-002 will read from that
+# file. This stub only validates stdin parses.
+
 import json
 import sys
 from pathlib import Path
