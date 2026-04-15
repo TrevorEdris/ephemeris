@@ -123,7 +123,14 @@ def ingest_one(
 
     # --- Stage 1: Parse transcript ---
     log.log(session_id, "parse", "ok", f"Loading transcript: {transcript_path}")
-    load_result = load_transcript(transcript_path)
+    try:
+        load_result = load_transcript(transcript_path)
+    except Exception as exc:
+        elapsed = int((time.monotonic() - start_ts) * 1000)
+        log.log(session_id, "parse", "error", f"Transcript parse failed: {exc}", elapsed)
+        _write_error_marker(transcript_path, str(exc), dry_run)
+        return PageResult(success=False, session_id=session_id, error=str(exc))
+
     if load_result.skipped_lines > 0:
         log.log(
             session_id,
@@ -218,7 +225,19 @@ def ingest_one(
 
                 # Call merge_topic — returns MergeResult
                 log.log(session_id, "merge", "ok", f"Merging into existing page: {op.page_name!r}")
-                merge_result = model.merge_topic(existing_content, new_content_str, session_id)
+                try:
+                    merge_result = model.merge_topic(existing_content, new_content_str, session_id)
+                except Exception as merge_exc:
+                    elapsed = int((time.monotonic() - start_ts) * 1000)
+                    log.log(session_id, "merge", "error",
+                            f"merge_topic failed for {op.page_name!r}: {merge_exc}", elapsed)
+                    _write_error_marker(transcript_path, str(merge_exc), dry_run)
+                    return PageResult(
+                        success=False,
+                        session_id=session_id,
+                        pages_written=pages_written,
+                        error=str(merge_exc),
+                    )
 
                 # Build merged content from existing + additions + conflicts + resolution
                 merged = apply_merge_additions(existing_content, merge_result.additions)
