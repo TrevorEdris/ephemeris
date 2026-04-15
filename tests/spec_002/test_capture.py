@@ -267,3 +267,56 @@ def test_capture_large_transcript_no_truncation(tmp_path: Path) -> None:
     assert len(captured_bytes) == len(jsonl_content), (
         f"Truncation detected: expected {len(jsonl_content)} bytes, got {len(captured_bytes)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Step 16 RED: Staging dir unavailable raises StagingUnavailableError
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(os.name == "nt", reason="chmod not reliable on Windows")
+def test_capture_staging_unavailable_raises(tmp_path: Path) -> None:
+    """AC-8: Unwritable staging root raises StagingUnavailableError; no partial file."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import StagingUnavailableError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user"}\n')
+
+    # Create staging root as read-only so mkdir of subdir fails
+    staging_root = tmp_path / "ro_staging"
+    staging_root.mkdir()
+    staging_root.chmod(0o555)
+
+    payload = {"session_id": "perm-001", "transcript_path": str(transcript_file)}
+
+    try:
+        with pytest.raises(StagingUnavailableError):
+            capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+        # No partial file should exist
+        partial_files = list(staging_root.rglob("*.tmp"))
+        assert partial_files == [], f"Partial files left behind: {partial_files}"
+    finally:
+        # Restore permissions so tmp_path cleanup works
+        staging_root.chmod(0o755)
+
+
+def test_capture_staging_unavailable_via_mock(tmp_path: Path) -> None:
+    """AC-8: StagingUnavailableError raised when os.makedirs fails (cross-platform)."""
+    from unittest.mock import patch
+
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import StagingUnavailableError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user"}\n')
+
+    payload = {"session_id": "perm-002", "transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+
+    with patch("ephemeris.capture.Path.mkdir", side_effect=PermissionError("denied")):
+        with pytest.raises(StagingUnavailableError) as exc_info:
+            capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert "denied" in str(exc_info.value).lower() or "staging" in str(exc_info.value).lower()
