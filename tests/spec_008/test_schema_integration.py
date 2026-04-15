@@ -5,6 +5,7 @@ All tests use FakeModelClient; no Anthropic SDK imports.
 
 AC coverage:
     AC-2 (valid user schema injected into ingestion system_prompt)
+    AC-2 production (auto-discovery of ~/.claude/ephemeris/schema.md via run_ingest_all)
     AC-6 (default-schema wiki pages preserved after user-schema run)
     AC-7 (user-schema wiki pages preserved after default-schema run)
     AC-9 (schema file read at most once per multi-session ingest run)
@@ -302,4 +303,73 @@ def test_ingest_all_reads_schema_file_once(
     assert read_count[0] == 1, (
         f"Schema file must be read exactly once per ingest_all run, "
         f"but was read {read_count[0]} time(s)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC-2 production: ingest_all auto-discovers ~/.claude/ephemeris/schema.md
+# ---------------------------------------------------------------------------
+
+def test_ingest_all_auto_discovers_user_schema_without_env_var(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-2 production path: when ~/.claude/ephemeris/schema.md exists,
+    ingest_all injects it into the system_prompt WITHOUT requiring
+    EPHEMERIS_SCHEMA_PATH to be set.
+
+    Strategy:
+    - Use tmp_path as a fake HOME by monkeypatching Path.home()
+    - Write schema with unique marker at <tmp_path>/.claude/ephemeris/schema.md
+    - Run ingest_all with a CapturingFakeClient that records system_prompt
+    - Assert marker appears in the captured prompt
+    - EPHEMERIS_SCHEMA_PATH is explicitly unset to prove auto-discovery works
+    """
+    from ephemeris.ingest import ingest_all
+    from ephemeris.log import IngestLogger
+    from ephemeris.model import FakeModelClient
+
+    # Ensure EPHEMERIS_SCHEMA_PATH is NOT set — prove auto-discovery path
+    monkeypatch.delenv("EPHEMERIS_SCHEMA_PATH", raising=False)
+
+    # Fake HOME: write well-known schema path under tmp_path
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    schema_dir = fake_home / ".claude" / "ephemeris"
+    schema_dir.mkdir(parents=True)
+    schema_file = schema_dir / "schema.md"
+    schema_file.write_text(
+        "# Auto-Discovered Schema\nUNIQUE_AC2_MARKER_XYZ\n",
+        encoding="utf-8",
+    )
+
+    # Monkeypatch Path.home() so expanduser("~") resolves to fake_home
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+    wiki_root = tmp_path / "wiki"
+    wiki_root.mkdir()
+    staging_root = tmp_path / "staging"
+
+    _make_transcript(staging_root, "ac2-prod-sess")
+
+    captured_prompts: list[str] = []
+
+    class CapturingFakeClient(FakeModelClient):
+        def invoke(self, system_prompt: str, user_prompt: str) -> str:
+            captured_prompts.append(system_prompt)
+            return '{"operations": []}'
+
+    log = IngestLogger(tmp_path / "test.log")
+
+    ingest_all(
+        staging_root=staging_root,
+        wiki_root=wiki_root,
+        model=CapturingFakeClient(),
+        log=log,
+    )
+
+    assert captured_prompts, "Model.invoke was never called — no transcripts processed"
+    system_prompt = captured_prompts[0]
+    assert "UNIQUE_AC2_MARKER_XYZ" in system_prompt, (
+        "Auto-discovered user schema marker must appear in system_prompt. "
+        f"Got prompt starting with: {system_prompt[:200]!r}"
     )

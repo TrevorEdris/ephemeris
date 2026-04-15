@@ -494,7 +494,10 @@ def ingest_all(
     today = datetime.date.today().isoformat()
 
     # Resolve schema once for the entire batch run (AC-9)
-    resolved_schema = resolve_schema(wiki_root)
+    # AC-2: auto-discover the well-known user schema path without requiring
+    # EPHEMERIS_SCHEMA_PATH to be set.
+    _user_schema_path = Path.home() / ".claude" / "ephemeris" / "schema.md"
+    resolved_schema = resolve_schema(wiki_root, user_schema_path=_user_schema_path)
 
     for transcript_path in transcript_paths:
         session_id = transcript_path.stem
@@ -742,6 +745,12 @@ def main(argv: "list[str] | None" = None) -> None:
         contradictions_total = 0
         error_lines: list[str] = []
 
+        from ephemeris.schema import resolve_schema
+
+        # AC-2: auto-discover user schema once for the batch run
+        _user_schema_path = Path.home() / ".claude" / "ephemeris" / "schema.md"
+        _resolved_schema = resolve_schema(wiki_root, user_schema_path=_user_schema_path)
+
         for i, transcript_path in enumerate(pending, start=1):
             session_id = transcript_path.stem
             print(f"[{i}/{total}] Ingesting session {session_id}...", flush=True)
@@ -753,6 +762,7 @@ def main(argv: "list[str] | None" = None) -> None:
                 session_id=session_id,
                 session_date=today,
                 dry_run=args.dry_run,
+                schema_text=_resolved_schema,
             )
             if result.success:
                 pages_created_total += len(result.pages_created)
