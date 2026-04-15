@@ -461,3 +461,70 @@ def test_pre_compact_exits_zero_on_capture_error(tmp_path: Path) -> None:
         f"pre_compact.py should exit 0 even on capture error; "
         f"got {result.returncode}; stderr: {result.stderr.decode()!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Path traversal rejection tests (Fix 1)
+# ---------------------------------------------------------------------------
+
+
+def test_capture_rejects_session_id_with_path_separator(tmp_path: Path) -> None:
+    """session_id containing '../' must raise InvalidPayloadError; no file written."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import InvalidPayloadError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user","content":"hi"}\n')
+
+    payload = {"session_id": "../escape", "transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(InvalidPayloadError) as exc_info:
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert "path separator" in str(exc_info.value).lower() or "../escape" in str(exc_info.value)
+
+    # No .jsonl file should have been written anywhere under staging_root
+    if staging_root.exists():
+        jsonl_files = list(staging_root.rglob("*.jsonl"))
+        assert jsonl_files == [], f"No .jsonl files should be written; found: {jsonl_files}"
+
+
+def test_capture_rejects_session_id_with_absolute_path(tmp_path: Path) -> None:
+    """session_id that is an absolute path must raise InvalidPayloadError."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import InvalidPayloadError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user","content":"hi"}\n')
+
+    payload = {"session_id": "/tmp/evil", "transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(InvalidPayloadError) as exc_info:
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert "/tmp/evil" in str(exc_info.value) or "path separator" in str(exc_info.value).lower()
+
+    if staging_root.exists():
+        jsonl_files = list(staging_root.rglob("*.jsonl"))
+        assert jsonl_files == [], f"No .jsonl files should be written; found: {jsonl_files}"
+
+
+def test_capture_rejects_session_id_with_parent_ref_as_suffix(tmp_path: Path) -> None:
+    """session_id 'legit/../escape' must raise InvalidPayloadError."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import InvalidPayloadError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user","content":"hi"}\n')
+
+    payload = {"session_id": "legit/../escape", "transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(InvalidPayloadError):
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    if staging_root.exists():
+        jsonl_files = list(staging_root.rglob("*.jsonl"))
+        assert jsonl_files == [], f"No .jsonl files should be written; found: {jsonl_files}"
