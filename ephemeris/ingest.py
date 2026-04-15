@@ -47,13 +47,26 @@ class PageResult:
     Attributes:
         success: True if the transcript was fully processed without error.
         session_id: The session identifier.
-        pages_written: List of paths to pages that were written or updated.
+        pages_written: Complete list of paths written or updated this run
+            (union of pages_created and pages_updated). Maintained for
+            backward compatibility with SPEC-003/SPEC-004 callers and the
+            complete-log entry. Invariant:
+            ``len(pages_written) == len(pages_created) + len(pages_updated)``
+        pages_created: Subset of pages_written that were brand-new (did not
+            exist before this run). Mutually exclusive with pages_updated.
+        pages_updated: Subset of pages_written that merged into an existing
+            page. Mutually exclusive with pages_created.
+        contradictions: Count of conflict blocks injected across all page
+            operations in this session.
         error: Error message if success is False; otherwise empty string.
     """
 
     success: bool
     session_id: str
     pages_written: list[Path] = field(default_factory=list)
+    pages_created: list[Path] = field(default_factory=list)
+    pages_updated: list[Path] = field(default_factory=list)
+    contradictions: int = 0
     error: str = ""
 
 
@@ -273,6 +286,9 @@ def ingest_one(
         return PageResult(success=True, session_id=session_id)
 
     pages_written: list[Path] = []
+    pages_created: list[Path] = []
+    pages_updated: list[Path] = []
+    contradictions_count: int = 0
     # Build page_type_map for cross-reference resolution
     page_type_map: dict[str, str] = {op.page_name: op.page_type for op in operations}
 
@@ -303,6 +319,9 @@ def ingest_one(
                         success=False,
                         session_id=session_id,
                         pages_written=pages_written,
+                        pages_created=pages_created,
+                        pages_updated=pages_updated,
+                        contradictions=contradictions_count,
                         error=str(merge_exc),
                     )
 
@@ -315,6 +334,7 @@ def ingest_one(
                         log.log(session_id, "detect", "ok",
                                 f"Conflicts detected in {op.page_name!r}: {len(merge_result.conflicts)}")
                         merged = inject_conflict_blocks(merged, merge_result.conflicts)
+                        contradictions_count += len(merge_result.conflicts)
                     else:
                         log.log(session_id, "detect", "ok", f"No conflicts in {op.page_name!r}")
 
@@ -330,6 +350,9 @@ def ingest_one(
                         success=False,
                         session_id=session_id,
                         pages_written=pages_written,
+                        pages_created=pages_created,
+                        pages_updated=pages_updated,
+                        contradictions=contradictions_count,
                         error=str(detect_exc),
                     )
 
@@ -342,6 +365,7 @@ def ingest_one(
                 page_path = _page_path_for_op(op, wiki_root)
                 pending_writes.append((page_path, merged))
                 pages_written.append(page_path)
+                pages_updated.append(page_path)  # merged into existing page
             else:
                 # New topic/entity page or decision (AC-2.4)
                 log.log(session_id, "merge", "ok", f"No existing page; creating: {op.page_name!r}")
@@ -351,10 +375,12 @@ def ingest_one(
                     page_path, new_content = build_new_page_content(op, wiki_root, citation)
                     pending_writes.append((page_path, new_content))
                     pages_written.append(page_path)
+                    pages_created.append(page_path)  # brand-new page
                 else:
                     # Decision pages: always append-only, no pre-run state to protect
                     page_path = write_page(op, wiki_root, citation)
                     pages_written.append(page_path)
+                    pages_created.append(page_path)  # brand-new decision page
         except Exception as exc:
             elapsed = int((time.monotonic() - start_ts) * 1000)
             log.log(session_id, "write", "error", f"Failed to write {op.page_name!r}: {exc}", elapsed)
@@ -364,6 +390,9 @@ def ingest_one(
                 success=False,
                 session_id=session_id,
                 pages_written=pages_written,
+                pages_created=pages_created,
+                pages_updated=pages_updated,
+                contradictions=contradictions_count,
                 error=str(exc),
             )
 
@@ -382,6 +411,9 @@ def ingest_one(
                 success=False,
                 session_id=session_id,
                 pages_written=[],
+                pages_created=[],
+                pages_updated=[],
+                contradictions=contradictions_count,
                 error=str(exc),
             )
 
@@ -410,6 +442,9 @@ def ingest_one(
         success=True,
         session_id=session_id,
         pages_written=pages_written,
+        pages_created=pages_created,
+        pages_updated=pages_updated,
+        contradictions=contradictions_count,
     )
 
 
@@ -616,12 +651,11 @@ def main(argv: "list[str] | None" = None) -> None:
         )
 
         if result_one.success:
-            pages_created = len(result_one.pages_written)
             summary = IngestSummary(
                 sessions_processed=1,
-                pages_created=pages_created,
-                pages_updated=0,
-                contradictions=getattr(result_one, "contradictions", 0),
+                pages_created=len(result_one.pages_created),
+                pages_updated=len(result_one.pages_updated),
+                contradictions=result_one.contradictions,
                 errors=0,
                 error_lines=[],
             )
@@ -677,8 +711,9 @@ def main(argv: "list[str] | None" = None) -> None:
                 dry_run=args.dry_run,
             )
             if result.success:
-                pages_created_total += len(result.pages_written)
-                contradictions_total += getattr(result, "contradictions", 0)
+                pages_created_total += len(result.pages_created)
+                pages_updated_total += len(result.pages_updated)
+                contradictions_total += result.contradictions
             else:
                 error_lines.append(f"{session_id}: {result.error}")
 
