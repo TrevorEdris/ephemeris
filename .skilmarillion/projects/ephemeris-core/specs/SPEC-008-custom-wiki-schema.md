@@ -3,7 +3,7 @@
 **Feature ID:** P2-B
 **Size:** SMALL
 **Risk:** MODERATE
-**Status:** DRAFT
+**Status:** IMPLEMENTED
 **Depends on:** P1-A (transcript capture), P1-B (ingestion pipeline)
 
 ## Problem Statement

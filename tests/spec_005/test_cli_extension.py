@@ -299,11 +299,11 @@ def test_ingest_command_partial_failure(tmp_path: Path) -> None:
 
     call_order: list[str] = []
 
-    def patched_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run=False):
+    def patched_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run=False, **kwargs):
         call_order.append(session_id)
         if session_id == "sess-2":
             return PageResult(success=False, session_id=session_id, error="deliberate failure")
-        return original_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run)
+        return original_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run, **kwargs)
 
     ingest_mod.ingest_one = patched_ingest_one  # type: ignore[assignment]
     try:
@@ -361,8 +361,8 @@ def test_ingest_command_contradiction_surfaced(tmp_path: Path) -> None:
     from ephemeris.ingest import PageResult
     original_ingest_one = ingest_mod.ingest_one
 
-    def patched_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run=False):
-        result = original_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run)
+    def patched_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run=False, **kwargs):
+        result = original_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run, **kwargs)
         # Inject contradictions count into result
         result.contradictions = 1  # type: ignore[attr-defined]
         return result

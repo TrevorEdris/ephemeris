@@ -273,8 +273,8 @@ def test_summary_reports_pages_updated_not_zero(tmp_path: Path) -> None:
     original_ingest_one = ingest_mod.ingest_one
     updated_path = topics_dir / "mytopic.md"
 
-    def patched_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run=False):
-        result = original_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run)
+    def patched_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run=False, **kwargs):
+        result = original_ingest_one(transcript_path, wiki_root, model, log, session_id, session_date, dry_run, **kwargs)
         # Simulate the update tracking: force pages_updated to contain the path
         # (This test will pass GREEN once real ingest_one does this naturally)
         result.pages_created = []

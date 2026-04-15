@@ -24,6 +24,8 @@ Environment overrides:
     EPHEMERIS_WIKI_ROOT     — wiki root (default: ~/.claude/ephemeris/wiki)
     EPHEMERIS_LOG_PATH      — diagnostic log (default: ~/.claude/ephemeris/ephemeris.log)
     EPHEMERIS_MODEL_CLIENT  — 'anthropic' or 'fake' (default: 'anthropic')
+    EPHEMERIS_SCHEMA_PATH   — override schema file path; takes precedence over
+                              ~/.claude/ephemeris/schema.md and wiki_root/SCHEMA.md
     ANTHROPIC_API_KEY       — required for AnthropicModelClient
 """
 
@@ -161,6 +163,7 @@ def ingest_one(
     session_id: str,
     session_date: str,
     dry_run: bool = False,
+    schema_text: Optional[str] = None,
 ) -> PageResult:
     """Process a single staged transcript through the ingestion pipeline.
 
@@ -181,6 +184,10 @@ def ingest_one(
         session_id: Session identifier (used in citations and log entries).
         session_date: Session date in YYYY-MM-DD format.
         dry_run: If True, skip all file writes and staging cleanup.
+        schema_text: Pre-resolved schema string to embed in the ingestion prompt.
+            When provided, skips the file-based schema resolution step.
+            Callers should resolve once per run and pass the result here.
+            If None, falls back to the existing wiki_root/SCHEMA.md lookup.
 
     Returns:
         PageResult with success=True and pages written, or success=False
@@ -226,16 +233,18 @@ def ingest_one(
         )
     transcript_text = transcript_to_text(load_result.messages)
 
-    # --- Stage 2: Bootstrap schema ---
+    # --- Stage 2: Bootstrap schema + resolve active schema ---
     log.log(session_id, "schema", "ok", "Bootstrapping wiki schema")
     if not dry_run:
         bootstrap_schema(wiki_root)
-    schema_path = wiki_root / "SCHEMA.md"
-    schema_text = (
-        schema_path.read_text(encoding="utf-8")
-        if schema_path.exists()
-        else ""
-    )
+    if schema_text is None:
+        # No pre-resolved schema — fall back to wiki-local lookup
+        schema_path = wiki_root / "SCHEMA.md"
+        schema_text = (
+            schema_path.read_text(encoding="utf-8")
+            if schema_path.exists()
+            else ""
+        )
 
     # --- Stage 3: Build prompts ---
     log.log(session_id, "prompt", "ok", "Building ingestion prompt")
@@ -473,6 +482,8 @@ def ingest_all(
     """
     import datetime
 
+    from ephemeris.schema import resolve_schema
+
     result = IngestResult()
 
     # Find all *.jsonl files under staging_root (skip *.error files)
@@ -484,6 +495,12 @@ def ingest_all(
 
     today = datetime.date.today().isoformat()
 
+    # Resolve schema once for the entire batch run (AC-9)
+    # AC-2: auto-discover the well-known user schema path without requiring
+    # EPHEMERIS_SCHEMA_PATH to be set.
+    _user_schema_path = Path.home() / ".claude" / "ephemeris" / "schema.md"
+    resolved_schema = resolve_schema(wiki_root, user_schema_path=_user_schema_path)
+
     for transcript_path in transcript_paths:
         session_id = transcript_path.stem
         page_result = ingest_one(
@@ -494,6 +511,7 @@ def ingest_all(
             session_id=session_id,
             session_date=today,
             dry_run=dry_run,
+            schema_text=resolved_schema,
         )
         result.results.append(page_result)
 
@@ -671,6 +689,13 @@ def main(argv: "list[str] | None" = None) -> None:
         transcript_path = candidates[0]
 
         print(f"[1/1] Ingesting session {args.session_id}...", flush=True)
+
+        from ephemeris.schema import resolve_schema
+
+        # AC-2: auto-discover user schema for single-session mode (mirrors batch path)
+        _user_schema_path = Path.home() / ".claude" / "ephemeris" / "schema.md"
+        _resolved_schema = resolve_schema(wiki_root, user_schema_path=_user_schema_path)
+
         result_one = ingest_one(
             transcript_path=transcript_path,
             wiki_root=wiki_root,
@@ -679,6 +704,7 @@ def main(argv: "list[str] | None" = None) -> None:
             session_id=args.session_id,
             session_date=today,
             dry_run=args.dry_run,
+            schema_text=_resolved_schema,
         )
 
         if result_one.success:
@@ -729,6 +755,12 @@ def main(argv: "list[str] | None" = None) -> None:
         contradictions_total = 0
         error_lines: list[str] = []
 
+        from ephemeris.schema import resolve_schema
+
+        # AC-2: auto-discover user schema once for the batch run
+        _user_schema_path = Path.home() / ".claude" / "ephemeris" / "schema.md"
+        _resolved_schema = resolve_schema(wiki_root, user_schema_path=_user_schema_path)
+
         for i, transcript_path in enumerate(pending, start=1):
             session_id = transcript_path.stem
             print(f"[{i}/{total}] Ingesting session {session_id}...", flush=True)
@@ -740,6 +772,7 @@ def main(argv: "list[str] | None" = None) -> None:
                 session_id=session_id,
                 session_date=today,
                 dry_run=args.dry_run,
+                schema_text=_resolved_schema,
             )
             if result.success:
                 pages_created_total += len(result.pages_created)
