@@ -361,3 +361,103 @@ def test_capture_same_session_id_both_hooks_separate_paths(tmp_path: Path) -> No
     assert pre_dest.read_bytes() == content_pre
     assert end_dest.read_bytes() == content_end
     assert pre_dest != end_dest, "Files must be at distinct paths"
+
+
+# ---------------------------------------------------------------------------
+# Step 20 RED: Hook scripts invoke capture and exit 0
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).parent.parent.parent
+POST_SESSION_PY = REPO_ROOT / "hooks" / "post_session.py"
+PRE_COMPACT_PY = REPO_ROOT / "hooks" / "pre_compact.py"
+
+
+def _run_hook_with_staging(
+    script: Path,
+    payload: dict,
+    staging_root: Path,
+) -> "subprocess.CompletedProcess[bytes]":
+    import subprocess
+
+    env = {**os.environ, "EPHEMERIS_STAGING_ROOT": str(staging_root)}
+    return subprocess.run(
+        [sys.executable, str(script)],
+        input=json.dumps(payload).encode(),
+        capture_output=True,
+        timeout=10,
+        env=env,
+    )
+
+
+def test_post_session_invokes_capture_and_exits_zero(tmp_path: Path) -> None:
+    """Step 20: post_session.py runs capture via EPHEMERIS_STAGING_ROOT env var."""
+    import subprocess
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user","content":"hi"}\n')
+
+    staging_root = tmp_path / "staging"
+    payload = {"session_id": "hook-001", "transcript_path": str(transcript_file)}
+
+    result = _run_hook_with_staging(POST_SESSION_PY, payload, staging_root)
+
+    assert result.returncode == 0, (
+        f"post_session.py exited {result.returncode}; stderr: {result.stderr.decode()!r}"
+    )
+    dest = staging_root / "session-end" / "hook-001.jsonl"
+    assert dest.exists(), f"Expected staged file at {dest}; stderr: {result.stderr.decode()!r}"
+
+
+def test_pre_compact_invokes_capture_and_exits_zero(tmp_path: Path) -> None:
+    """Step 20: pre_compact.py runs capture via EPHEMERIS_STAGING_ROOT env var."""
+    import subprocess
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user","content":"compact me"}\n')
+
+    staging_root = tmp_path / "staging"
+    payload = {"session_id": "hook-002", "transcript_path": str(transcript_file)}
+
+    result = _run_hook_with_staging(PRE_COMPACT_PY, payload, staging_root)
+
+    assert result.returncode == 0, (
+        f"pre_compact.py exited {result.returncode}; stderr: {result.stderr.decode()!r}"
+    )
+    dest = staging_root / "pre-compact" / "hook-002.jsonl"
+    assert dest.exists(), f"Expected staged file at {dest}; stderr: {result.stderr.decode()!r}"
+
+
+def test_post_session_exits_zero_on_capture_error(tmp_path: Path) -> None:
+    """Step 20: post_session.py exits 0 even when capture fails (empty transcript)."""
+    import subprocess
+
+    empty_file = tmp_path / "empty.jsonl"
+    empty_file.write_bytes(b"")
+
+    staging_root = tmp_path / "staging"
+    payload = {"session_id": "hook-err-001", "transcript_path": str(empty_file)}
+
+    result = _run_hook_with_staging(POST_SESSION_PY, payload, staging_root)
+
+    assert result.returncode == 0, (
+        f"post_session.py should exit 0 even on capture error; "
+        f"got {result.returncode}; stderr: {result.stderr.decode()!r}"
+    )
+
+
+def test_pre_compact_exits_zero_on_capture_error(tmp_path: Path) -> None:
+    """Step 20: pre_compact.py exits 0 even when capture fails (empty transcript)."""
+    import subprocess
+
+    empty_file = tmp_path / "empty.jsonl"
+    empty_file.write_bytes(b"")
+
+    staging_root = tmp_path / "staging"
+    payload = {"session_id": "hook-err-002", "transcript_path": str(empty_file)}
+
+    result = _run_hook_with_staging(PRE_COMPACT_PY, payload, staging_root)
+
+    assert result.returncode == 0, (
+        f"pre_compact.py should exit 0 even on capture error; "
+        f"got {result.returncode}; stderr: {result.stderr.decode()!r}"
+    )
