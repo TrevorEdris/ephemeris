@@ -51,9 +51,10 @@ def test_resolve_schema_no_user_schema_no_debug_log(
     with caplog.at_level(logging.DEBUG, logger="ephemeris.schema"):
         resolve_schema(wiki_root, user_schema_path=None)
 
-    # No warnings should be logged for a clean default fallback
-    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert not warnings, f"Expected no warnings, got: {[r.message for r in warnings]}"
+    # AC-1: ingestion completes with NO log output at any level for clean default fallback
+    assert not caplog.records, (
+        f"Expected no log records, got: {[r.getMessage() for r in caplog.records]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -153,8 +154,10 @@ def test_resolve_schema_empty_file_no_debug_log(
     with caplog.at_level(logging.DEBUG, logger="ephemeris.schema"):
         resolve_schema(wiki_root, user_schema_path=schema_file)
 
-    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert not warnings, f"Expected no warnings for empty file, got: {[r.message for r in warnings]}"
+    # AC-4: ingestion completes with NO log output at any level for empty file silent fallback
+    assert not caplog.records, (
+        f"Expected no log records for empty file, got: {[r.getMessage() for r in caplog.records]}"
+    )
 
 
 def test_load_user_schema_empty_file_returns_none(tmp_path: Path) -> None:

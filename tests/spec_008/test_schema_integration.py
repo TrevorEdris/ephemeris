@@ -373,3 +373,68 @@ def test_ingest_all_auto_discovers_user_schema_without_env_var(
         "Auto-discovered user schema marker must appear in system_prompt. "
         f"Got prompt starting with: {system_prompt[:200]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# BLOCKER AC-2 single-session: main() single-session mode auto-discovers schema
+# ---------------------------------------------------------------------------
+
+def test_main_single_session_auto_discovers_user_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLOCKER AC-2: When main() is invoked with a single session_id argument,
+    it auto-discovers ~/.claude/ephemeris/schema.md and passes it to ingest_one.
+
+    RED: fails because main() single-session branch does not call resolve_schema
+    and never passes schema_text to ingest_one.
+    """
+    from ephemeris.ingest import main
+    from ephemeris.model import FakeModelClient
+
+    # Ensure EPHEMERIS_SCHEMA_PATH is NOT set — prove auto-discovery path
+    monkeypatch.delenv("EPHEMERIS_SCHEMA_PATH", raising=False)
+
+    # Fake HOME: write well-known schema path under tmp_path
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    schema_dir = fake_home / ".claude" / "ephemeris"
+    schema_dir.mkdir(parents=True)
+    schema_file = schema_dir / "schema.md"
+    schema_file.write_text(
+        "# Single-Session Auto-Discovery Schema\nUNIQUE_AC2_SINGLE_SESSION_MARKER\n",
+        encoding="utf-8",
+    )
+
+    # Monkeypatch Path.home() so resolve_schema finds the fake schema
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+    # Set up staging root with a transcript for the target session
+    staging_root = tmp_path / "staging"
+    session_id = "single-sess-ac2"
+    transcript_path = _make_transcript(staging_root, session_id)
+
+    monkeypatch.setenv("EPHEMERIS_STAGING_ROOT", str(staging_root))
+    monkeypatch.setenv("EPHEMERIS_WIKI_ROOT", str(tmp_path / "wiki"))
+    monkeypatch.setenv("EPHEMERIS_LOG_PATH", str(tmp_path / "test.log"))
+    monkeypatch.setenv("EPHEMERIS_MODEL_CLIENT", "fake")
+
+    (tmp_path / "wiki").mkdir(parents=True, exist_ok=True)
+
+    captured_prompts: list[str] = []
+
+    class CapturingFakeClient(FakeModelClient):
+        def invoke(self, system_prompt: str, user_prompt: str) -> str:
+            captured_prompts.append(system_prompt)
+            return '{"operations": []}'
+
+    # Monkeypatch FakeModelClient in the ephemeris.ingest module so main() picks it up
+    monkeypatch.setattr("ephemeris.model.FakeModelClient", CapturingFakeClient)
+
+    main([session_id])
+
+    assert captured_prompts, "Model.invoke was never called"
+    system_prompt = captured_prompts[0]
+    assert "UNIQUE_AC2_SINGLE_SESSION_MARKER" in system_prompt, (
+        "Auto-discovered user schema marker must appear in single-session system_prompt. "
+        f"Got prompt starting with: {system_prompt[:200]!r}"
+    )
