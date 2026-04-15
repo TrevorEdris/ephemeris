@@ -37,7 +37,7 @@ REQUIRED_BODY_STRINGS = [
     "Glob",
     "Read",
     "Write",
-    "Bash: mv",
+    "mv ",
     "$EPHEMERIS_SCHEMA_PATH",
     "schema.md",
     "SCHEMA.md",
@@ -45,7 +45,8 @@ REQUIRED_BODY_STRINGS = [
     "$EPHEMERIS_STAGING_ROOT",
     "No pending sessions to ingest.",
     "No staged session matches",
-    "pending/",
+    "session-end",
+    "pre-compact",
     "processed/",
 ]
 
@@ -141,7 +142,7 @@ class TestIngestSkillBodyRequired:
         assert "Write" in self._body()
 
     def test_bash_mv(self) -> None:
-        assert "Bash: mv" in self._body()
+        assert "mv " in self._body()
 
     def test_schema_path_env_var(self) -> None:
         assert "$EPHEMERIS_SCHEMA_PATH" in self._body()
@@ -164,8 +165,11 @@ class TestIngestSkillBodyRequired:
     def test_no_staged_session_matches_message(self) -> None:
         assert "No staged session matches" in self._body()
 
-    def test_pending_dir_reference(self) -> None:
-        assert "pending/" in self._body()
+    def test_session_end_hook_dir_reference(self) -> None:
+        assert "session-end" in self._body()
+
+    def test_pre_compact_hook_dir_reference(self) -> None:
+        assert "pre-compact" in self._body()
 
     def test_processed_dir_reference(self) -> None:
         assert "processed/" in self._body()

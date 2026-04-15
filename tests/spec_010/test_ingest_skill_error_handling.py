@@ -39,22 +39,25 @@ def _body() -> str:
 
 
 class TestIngestSkillErrorHandling:
-    def test_retry_semantics_stays_in_pending(self) -> None:
-        """Body must describe that a failed session's JSONL stays in pending/ for retry."""
+    def test_retry_semantics_stays_in_staging(self) -> None:
+        """Body must describe that a failed session's JSONL stays in the per-hook-type
+        staging dir (outside processed/) so the next run retries it."""
         body = _body()
-        # Check that 'stays in' and 'pending' appear within 200 chars of each other
         idx_stays = body.find("stays in")
         assert idx_stays != -1, (
             "commands/ingest.md body does not contain 'stays in' — "
             "retry semantics phrase missing"
         )
-        # Find the nearest 'pending' within 200 chars
+        # The sentence that follows "stays in" must tie retry to the hook-type
+        # staging dir concept. Accept either explicit hook names or the
+        # staging_root template variable used in the body.
         window_start = max(0, idx_stays - 200)
-        window_end = min(len(body), idx_stays + 200)
+        window_end = min(len(body), idx_stays + 400)
         window = body[window_start:window_end]
-        assert "pending" in window, (
-            "commands/ingest.md: 'stays in' found but 'pending' not within 200 chars — "
-            "retry semantics phrase incomplete"
+        anchors = ("<hook-type>", "session-end", "pre-compact", "staging_root")
+        assert any(anchor in window for anchor in anchors), (
+            "commands/ingest.md: 'stays in' found but no hook-type/staging anchor "
+            "within 400 chars — retry semantics phrase incomplete"
         )
 
     def test_summary_format_pages_created(self) -> None:
