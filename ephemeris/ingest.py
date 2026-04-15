@@ -161,6 +161,7 @@ def ingest_one(
     session_id: str,
     session_date: str,
     dry_run: bool = False,
+    schema_text: Optional[str] = None,
 ) -> PageResult:
     """Process a single staged transcript through the ingestion pipeline.
 
@@ -181,6 +182,10 @@ def ingest_one(
         session_id: Session identifier (used in citations and log entries).
         session_date: Session date in YYYY-MM-DD format.
         dry_run: If True, skip all file writes and staging cleanup.
+        schema_text: Pre-resolved schema string to embed in the ingestion prompt.
+            When provided, skips the file-based schema resolution step.
+            Callers should resolve once per run and pass the result here.
+            If None, falls back to the existing wiki_root/SCHEMA.md lookup.
 
     Returns:
         PageResult with success=True and pages written, or success=False
@@ -226,16 +231,18 @@ def ingest_one(
         )
     transcript_text = transcript_to_text(load_result.messages)
 
-    # --- Stage 2: Bootstrap schema ---
+    # --- Stage 2: Bootstrap schema + resolve active schema ---
     log.log(session_id, "schema", "ok", "Bootstrapping wiki schema")
     if not dry_run:
         bootstrap_schema(wiki_root)
-    schema_path = wiki_root / "SCHEMA.md"
-    schema_text = (
-        schema_path.read_text(encoding="utf-8")
-        if schema_path.exists()
-        else ""
-    )
+    if schema_text is None:
+        # No pre-resolved schema — fall back to wiki-local lookup
+        schema_path = wiki_root / "SCHEMA.md"
+        schema_text = (
+            schema_path.read_text(encoding="utf-8")
+            if schema_path.exists()
+            else ""
+        )
 
     # --- Stage 3: Build prompts ---
     log.log(session_id, "prompt", "ok", "Building ingestion prompt")
@@ -473,6 +480,8 @@ def ingest_all(
     """
     import datetime
 
+    from ephemeris.schema import resolve_schema
+
     result = IngestResult()
 
     # Find all *.jsonl files under staging_root (skip *.error files)
@@ -484,6 +493,9 @@ def ingest_all(
 
     today = datetime.date.today().isoformat()
 
+    # Resolve schema once for the entire batch run (AC-9)
+    resolved_schema = resolve_schema(wiki_root)
+
     for transcript_path in transcript_paths:
         session_id = transcript_path.stem
         page_result = ingest_one(
@@ -494,6 +506,7 @@ def ingest_all(
             session_id=session_id,
             session_date=today,
             dry_run=dry_run,
+            schema_text=resolved_schema,
         )
         result.results.append(page_result)
 
