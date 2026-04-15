@@ -1,0 +1,10 @@
+{"type": "user", "content": "We need to add v2 of the user endpoint. The response shape is changing — adding nested address object instead of flat fields.", "timestamp": "2026-04-08T14:02:55Z"}
+{"type": "assistant", "content": "I'll add /api/v2/users/{id} alongside /api/v1/users/{id}. The v1 endpoint stays unchanged for backward compatibility. The v2 response serializer uses an AddressSchema nested under user.address.", "timestamp": "2026-04-08T14:03:11Z"}
+{"type": "user", "content": "How long do we maintain v1?", "timestamp": "2026-04-08T14:03:23Z"}
+{"type": "assistant", "content": "Recommend a 6-month deprecation window after v2 launches. Add a Deprecation header to v1 responses now so clients know it's going away. Document the sunset date in the API changelog.", "timestamp": "2026-04-08T14:03:38Z"}
+{"type": "user", "content": "6 months is fine. What's the header format?", "timestamp": "2026-04-08T14:03:52Z"}
+{"type": "assistant", "content": "Use the IETF draft standard: `Deprecation: Sat, 01 Nov 2026 00:00:00 GMT` and `Sunset: Sat, 01 Nov 2026 00:00:00 GMT`. Both are standardized headers that API gateways and client libraries understand.", "timestamp": "2026-04-08T14:04:07Z"}
+{"type": "user", "content": "Done. Also add a Link header pointing to migration docs.", "timestamp": "2026-04-08T14:04:19Z"}
+{"type": "assistant", "content": "Added `Link: <https://docs.example.com/api/migration/v1-to-v2>; rel=\"deprecation\"` to all v1 user endpoint responses. Added middleware to inject this header automatically so individual route handlers don't need to set it.", "timestamp": "2026-04-08T14:04:58Z"}
+{"type": "user", "content": "Good. Let's write the migration guide doc next.", "timestamp": "2026-04-08T14:05:10Z"}
+{"type": "assistant", "content": "Created docs/api/migration/v1-to-v2.md with: breaking changes list, field mapping table (flat → nested), code examples in Python and TypeScript, and the sunset date. Linked it from the API reference index.", "timestamp": "2026-04-08T14:06:02Z"}

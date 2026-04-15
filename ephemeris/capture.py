@@ -7,6 +7,7 @@ Public API:
     capture(hook_type, payload, staging_root) -> Path
     parse_hook_payload(hook_type, payload) -> tuple[str, Path]
     stage_transcript(staging_root, hook_type, session_id, src) -> Path
+    bootstrap_default_schema(source_path, dest_path) -> None
 
 Storage convention:
     <staging_root>/<hook_type>/<session_id>.jsonl
@@ -14,10 +15,14 @@ Storage convention:
 
 from __future__ import annotations
 
+import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger("ephemeris.capture")
 
 
 def parse_hook_payload(
@@ -223,3 +228,32 @@ def capture(
     """
     session_id, transcript_path = parse_hook_payload(hook_type, payload)
     return stage_transcript(staging_root, hook_type, session_id, transcript_path)
+
+
+def bootstrap_default_schema(
+    source_path: Path | None = None,
+    dest_path: Path | None = None,
+) -> None:
+    """Copy the shipped schema/default.md to the user-space bootstrap location.
+
+    Idempotent. Refreshes dest if source is newer (by mtime). Fail-soft: logs
+    and swallows any exception so a broken bootstrap cannot break hook capture.
+
+    Args:
+        source_path: Path to the shipped default schema. Defaults to
+            ``<plugin_root>/schema/default.md``.
+        dest_path: Path to the user-space copy. Defaults to
+            ``~/.claude/ephemeris/default-schema.md``.
+    """
+    try:
+        src = source_path or (Path(__file__).parent.parent / "schema" / "default.md")
+        dst = dest_path or (Path.home() / ".claude" / "ephemeris" / "default-schema.md")
+        if not src.exists():
+            _log.warning("bootstrap_default_schema: source missing at %s", src)
+            return
+        if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+            return
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    except Exception as exc:  # fail-soft
+        _log.warning("bootstrap_default_schema failed: %s", exc)

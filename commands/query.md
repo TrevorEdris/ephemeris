@@ -1,51 +1,83 @@
 ---
-description: Query the ephemeris wiki with a natural language question. Returns a grounded answer with citations, or an explicit "cannot answer" message if the wiki has no relevant content.
+description: Answer a question from the local wiki using the current session's model. Read-only.
 argument-hint: "<question>"
 allowed-tools:
-  - Bash
+  - Read
+  - Glob
+  - Grep
 ---
 
 # /ephemeris:query
 
-Ask a question about your personal wiki. The command retrieves relevant wiki pages, assembles a grounded prompt, and synthesizes an answer that cites the specific pages used. The model is explicitly instructed to answer only from wiki excerpts — if the wiki lacks relevant content, the command returns an explicit "cannot answer" message rather than drawing on model training knowledge.
-
-## Usage
-
-- `/ephemeris:query Where is Rivendell?`
-- `/ephemeris:query What did we decide about error handling?`
-- `/ephemeris:query Tell me about the TranscriptCapture entity`
-
-## Behavior
-
-1. Run `python3 -m ephemeris.query "$ARGUMENTS"` using the Bash tool.
-2. Stream stdout to the user as output arrives.
-3. When the command finishes, display all output verbatim.
-4. If the command exits non-zero, surface the error output to the user.
+Answer a natural-language question about the user's project from the local
+ephemeris wiki. All reasoning happens in this session — no subprocess, no API
+key, no outbound calls. This skill is read-only: it never writes, edits, or
+moves a file.
 
 ## Instructions
 
-Run the command using the Bash tool:
+### 1. Parse the question
 
-```bash
-python3 -m ephemeris.query "$ARGUMENTS"
+- If `$ARGUMENTS` is empty, emit `Usage: /ephemeris:query "<question>"` and
+  stop.
+- Otherwise, treat `$ARGUMENTS` as the question. Extract 3–6 key terms: nouns,
+  named entities, distinctive verbs. Ignore stop-words and generic filler.
+
+### 2. Resolve the wiki root
+
+- `<wiki_root>` is `$EPHEMERIS_WIKI_ROOT` if set and non-empty, else
+  `~/.claude/ephemeris/wiki`.
+- If `<wiki_root>` does not exist, emit `Wiki not found at <path>. Run /ephemeris:ingest first.` and stop.
+
+### 3. Enumerate the wiki
+
+`Glob`: `<wiki_root>/**/*.md`.
+
+- If zero results, emit `Wiki is empty — no pages have been built yet.` and
+  stop.
+
+### 4. Search for relevant pages
+
+For each key term from step 1, run `Grep` with:
+- `pattern`: the key term (case-insensitive)
+- `path`: `<wiki_root>`
+- `output_mode`: `files_with_matches`
+- `glob`: `*.md`
+
+Union the file paths returned across all terms. Rank by number of terms matched
+(most terms = most relevant). Take the top 5.
+
+- If the union is empty, emit `Cannot answer this from the wiki — no relevant pages found.` followed by an empty `## Sources` block and stop.
+
+### 5. Read the top matches
+
+For each of the top 5 files: `Read` the full file contents. Hold the content in
+working memory.
+
+### 6. Answer from read content only
+
+Compose an answer to the question using **only** the content of the pages you
+just `Read`. Do not draw on training-data knowledge about the project or
+codebase — only what the wiki explicitly says.
+
+**Grounding rule:** Every claim in the answer body must be traceable to a
+specific wiki page you read. If the pages don't support a claim, drop the claim
+or mark it `(not found in wiki)`. If none of the pages actually answer the
+question, emit `Cannot answer this from the wiki — no relevant pages found.`
+and skip to the `## Sources` block.
+
+### 7. Cite sources
+
+End the response with a `## Sources` block listing every wiki page referenced
+in the answer, as relative paths under `<wiki_root>`. Example:
+
+```
+## Sources
+- topics/authentication.md
+- DECISIONS.md
+- entities/AuthMiddleware.md
 ```
 
-The double-quotes around `$ARGUMENTS` are required to preserve spaces in the question.
-
-Display all stdout verbatim. Do not interpret, reformat, or summarize the output.
-
-### Exit codes
-
-- **0** — success (answer + citations), or wiki is empty, or no relevant pages found. All three are shown as user-facing messages in stdout.
-- **non-zero** — usage error (empty question) or retrieval error. Surface the stderr output to the user.
-
-### Output format
-
-On success, the command prints:
-1. The synthesized answer.
-2. A blank line.
-3. A `**Sources:**` citations block listing every retrieved page by title and path.
-
-On no-match: `Cannot answer this from the wiki — no relevant pages found.`
-
-On empty wiki: `Wiki is empty — no pages have been built yet.`
+The `## Sources` block appears even when the answer is the cannot-answer
+sentinel (possibly empty). It is the contract that tells the user what the
+skill looked at.

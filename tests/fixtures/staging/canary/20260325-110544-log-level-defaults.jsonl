@@ -1,0 +1,4 @@
+{"type": "user", "content": "The service is logging too verbosely in production. DEBUG is the default right now.", "timestamp": "2026-03-25T11:05:44Z"}
+{"type": "assistant", "content": "Change the default to WARNING in production and INFO in development. Use the LOG_LEVEL environment variable to override. Production deployments should never default to DEBUG.", "timestamp": "2026-03-25T11:05:53Z"}
+{"type": "user", "content": "Done. Let's make WARNING the floor — nothing below it unless LOG_LEVEL explicitly says so.", "timestamp": "2026-03-25T11:06:10Z"}
+{"type": "assistant", "content": "Implemented. Added a level_floor check in the logging config: if LOG_LEVEL resolves below WARNING (e.g. DEBUG in an env that forgot to set it), it's clamped to WARNING. Tests updated.", "timestamp": "2026-03-25T11:06:44Z"}

@@ -1,0 +1,4 @@
+{"type": "user", "content": "I want to add typed exception classes for the payment service. Right now everything throws a generic Exception.", "timestamp": "2026-03-01T09:45:12Z"}
+{"type": "assistant", "content": "Good call. I'll create a base PaymentError class and typed subclasses: PaymentDeclinedError, InsufficientFundsError, and PaymentGatewayError. Each will carry the transaction_id so callers can correlate logs.", "timestamp": "2026-03-01T09:45:18Z"}
+{"type": "user", "content": "Yes. Also add a CardExpiredError. The gateway returns a specific code for that.", "timestamp": "2026-03-01T09:45:31Z"}
+{"type": "assistant", "content": "Added CardExpiredError(PaymentError) with a card_last_four attribute. All four subclasses are in payments/exceptions.py. Updated the gateway adapter to raise the correct type based on the response code.", "timestamp": "2026-03-01T09:46:02Z"}

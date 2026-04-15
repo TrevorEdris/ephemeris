@@ -4,6 +4,36 @@
 
 ---
 
+## Principles (Non-Negotiable)
+
+These constraints are load-bearing. Any feature, spec, or implementation that violates one is rejected regardless of other merits. Every review MUST check against this section.
+
+### P-1: Execution Model — In-Session, Not Alongside
+
+The plugin runs **inside** the user's active Claude Code session. It does not spawn a subprocess that instantiates the Anthropic SDK, it does not require `ANTHROPIC_API_KEY`, and it does not issue outbound HTTPS calls to `api.anthropic.com` or any other model endpoint. All model work — transcript distillation, wiki merge, query answering — is performed by the running session using its own tool palette (`Read`, `Write`, `Bash`, `Glob`, `Grep`).
+
+Slash commands are **agent instructions**, not bash wrappers. A `commands/*.md` file whose body is a single `Bash: python3 -m ephemeris.xxx $ARGUMENTS` line is a violation of P-1.
+
+Helper CLIs (invoked via `Bash` from inside a skill) are permitted only for operations the Claude Code tool palette cannot guarantee — atomic renames, journal replay, path-traversal containment. Helper CLIs MUST NOT import `anthropic` or any other model SDK.
+
+### P-2: Zero-Config — No Credentials Required
+
+FR-002 is not a goal, it is a gate. Any feature that introduces a required environment variable, API key, auth flow, or first-run prompt is out of scope. The only permitted config is the opt-in overrides already specified (`EPHEMERIS_*` path overrides, `scope.json`, `schema.md`) — all of which have working defaults.
+
+### P-3: Local-First — No Network
+
+Per NFR-001 and NFR-005, zero outbound network connections originate from the plugin. This rule applies to hooks, slash commands, helper CLIs, and tests. A test suite that mocks a model client is not sufficient evidence — the production code path must be the same path the test exercises. If a test uses a `FakeXxxClient` to hide a real production client, the production client violates P-1.
+
+### P-4: Transactional File Writes
+
+Every wiki page write goes through `StageWriter` journal + `os.replace` atomic rename. Crashes mid-run must leave the wiki byte-identical to its pre-run state after the next `recover-orphans` call. This is enforced by fault-injection tests.
+
+### Violation History
+
+- **2026-04-15:** The Phase 0–2 implementation shipped with `ephemeris/model.py` instantiating `anthropic.Anthropic()` and both slash commands as subprocess wrappers — violating P-1, P-2, and P-3 simultaneously. SPEC-009 (Agent-Driven Execution Refactor) rips and replaces. Root cause: SPEC-003 left "Claude Code plugin API (tool call or agent invocation)" undefined, the `ModelClient` Protocol hid the concrete SDK client behind dependency injection, and `FakeModelClient` in tests masked the violation from every test run. This section exists to prevent recurrence.
+
+---
+
 ## Problem Statement
 
 Every Claude Code session starts with amnesia. Decisions made three weeks ago, naming conventions established last sprint, and architectural rationale buried in PR descriptions do not reach the next session automatically. Engineers spend real time re-explaining context that was already established, and Claude reconstructs understanding from scratch that it already derived before.

@@ -5,30 +5,19 @@ Fires on: SessionEnd (session ends, clear, resume, logout, etc.)
 Reads the JSON payload from stdin, extracts transcript_path, and persists
 the transcript bytes to staging storage via ephemeris.capture.
 
-After a successful capture, spawns ``python -m ephemeris.ingest`` as a
-detached background subprocess (start_new_session=True) so wiki ingestion
-happens asynchronously without blocking the session close. The hook returns
-immediately regardless of the ingestion outcome.
+Also calls bootstrap_default_schema() on every fire to ensure the shipped
+default schema is available at the user-space bootstrap path.
 
 Staging root defaults to ~/.claude/ephemeris/staging but can be overridden
 via the EPHEMERIS_STAGING_ROOT environment variable (used by tests).
 
-Environment controls:
-    EPHEMERIS_INGEST_ON_CAPTURE  — set to "0" to disable auto-trigger (tests)
-    EPHEMERIS_WIKI_ROOT          — wiki root dir (default: ~/.claude/ephemeris/wiki)
-    EPHEMERIS_LOG_PATH           — diagnostic log (default: ~/.claude/ephemeris/ephemeris.log)
-    EPHEMERIS_MODEL_CLIENT       — 'anthropic' or 'fake' (default: 'anthropic')
-
 Hook failure isolation: if capture raises, the error is printed to stderr
 and the hook exits 0 — never disturbing the Claude Code session (SPEC-001 AC-7).
-The background ingestion process is similarly isolated; hook does not wait for it.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -46,29 +35,10 @@ from ephemeris.scope import is_in_scope, load_scope_config  # noqa: E402
 HOOK_TYPE = "session-end"
 
 
-def _spawn_ingestion() -> None:
-    """Spawn python -m ephemeris.ingest as a detached background subprocess.
-
-    Uses start_new_session=True (POSIX) to put the child in its own process
-    group so it survives the parent hook process exiting. stdout and stderr
-    are discarded — the child logs to ephemeris.log directly.
-    """
-    try:
-        subprocess.Popen(
-            [sys.executable, "-m", "ephemeris.ingest"],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception as exc:
-        # Log but never raise — hook isolation must be preserved
-        print(
-            f"ephemeris: failed to spawn background ingestion: {exc}",
-            file=sys.stderr,
-        )
-
-
 def main() -> None:
+    from ephemeris.capture import bootstrap_default_schema
+    bootstrap_default_schema()
+
     payload = read_payload()
 
     # Scope check — runs immediately after payload parse, before any capture.
@@ -105,12 +75,6 @@ def main() -> None:
                 staging_root=staging_root,
             )
             print(json.dumps({"ok": True, "path": str(result_path)}))
-
-            # Spawn background ingestion unless explicitly disabled (e.g., tests)
-            ingest_on_capture = os.environ.get("EPHEMERIS_INGEST_ON_CAPTURE", "1")
-            if ingest_on_capture != "0":
-                _spawn_ingestion()
-
         except CaptureError:
             # Expected errors (missing transcript, invalid payload, etc.) are
             # a silent no-op — the hook fires but there is nothing to capture.

@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Phase:** 2 — In Progress
-**Last Updated:** 2026-04-15 (PR #13 — P2-B SPEC-008 implemented)
+**Phase:** 3 — Correction (implemented, pending merge)
+**Last Updated:** 2026-04-15 (SPEC-009 + SPEC-010 + SPEC-011 implemented in single Phase 3 PR — 188 tests green)
 **P0-B Completed:** 2026-04-15
 **P0-C Completed:** 2026-04-15
 **P0-D Completed:** 2026-04-15
@@ -11,6 +11,9 @@
 **P1-B Completed:** 2026-04-15
 **P2-A Completed:** 2026-04-15
 **P2-B Completed:** 2026-04-15
+**P3-A Completed:** 2026-04-15
+**P3-B Completed:** 2026-04-15
+**P3-C Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
@@ -21,6 +24,9 @@
 - [x] P1-B: Wiki Query (feat/spec-006-wiki-query, PR #11)
 - [x] P2-A: Capture Scope Configuration (feat/spec-007-capture-scope-config, PR #12)
 - [x] P2-B: Custom Wiki Schema (feat/spec-008-custom-wiki-schema, PR #13)
+- [x] P3-A: Rip Subprocess + Bootstrap Default Schema + Stub Commands (SPEC-009, feat/phase-3-agent-driven)
+- [x] P3-B: Ingest Skill Body (SPEC-010, feat/phase-3-agent-driven)
+- [x] P3-C: Query Skill Body (SPEC-011, feat/phase-3-agent-driven)
 
 ### In Progress
 *(none)*
@@ -28,7 +34,12 @@
 ### Pending
 - [x] Phase 0: Silent Wiki — COMPLETE
 - [x] Phase 1: Power-User Surface
-- [ ] Phase 2: Customization Layer
+- [x] Phase 2: Customization Layer
+- [x] Phase 3: Correction — IMPLEMENTED
+
+### Known Regressions
+
+- **2026-04-15:** The Phase 0–2 implementation violates PRD principles P-1 (in-session execution), P-2 (zero-config), and P-3 (local-first / no network). `ephemeris/model.py` instantiates `anthropic.Anthropic()` and requires `ANTHROPIC_API_KEY`; `commands/ingest.md` and `commands/query.md` are subprocess wrappers instead of agent instructions. Phase 3 (SPEC-009) is the rip-and-replace correction. No deprecation path — MVP, rip-and-replace.
 
 ---
 
@@ -164,6 +175,66 @@ Build the silent loop first and prove it. No visible surface until background in
 
 ---
 
+## Phase 3: Correction
+
+**Entry Criteria:** Phases 0–2 shipped but violate PRD principles P-1, P-2, P-3 (see Known Regressions above).
+
+**Exit Criteria:** The plugin runs entirely inside the active Claude Code session. No subprocess SDK pipeline, no `ANTHROPIC_API_KEY` requirement, no outbound HTTPS. Slash commands are agent instructions; helper CLIs exist only for operations the tool palette cannot guarantee (atomic writes, journal replay, traversal containment).
+
+### P3-A: Rip Subprocess + Bootstrap Default Schema + Stub Commands — DRAFT (SPEC-009)
+
+- **What:** Rip the subprocess model pipeline entirely. Delete `ephemeris/model.py`, `prompts.py`, `merge.py`, `ingest.py`, `query.py`, `wiki.py`, `schema.py`. Migrate `DEFAULT_SCHEMA` from a Python constant to a shipped `schema/default.md` file; add `bootstrap_default_schema()` to `ephemeris/capture.py` (atomic copy to `~/.claude/ephemeris/default-schema.md`, mtime-refresh, fail-soft) and wire it into both hooks. Replace `commands/ingest.md` and `commands/query.md` bodies with **stub sentinels** that point at SPEC-010 and SPEC-011 respectively — no ingest or query behavior lands in this SPEC. Keep only hook-side Python (`capture.py`, `stage.py`, `transcript.py`, `scope.py`, `log.py`, `exceptions.py`). Remove `anthropic` from `pyproject.toml`. Strip `ANTHROPIC_API_KEY` from `README.md`.
+- **Depends on:** P2-B complete (all prior SPECs merged — this is a rewrite, not a dependency).
+- **Risk:** HIGH. Large surface deletion, material test-suite shrinkage, queue grows while stubs are in place. Mitigated by TDD discipline (per SPEC-009 RED list), AST-based `test_no_anthropic_import` standing guard, and short runway between SPEC-009 and SPEC-010+011 merges.
+- **Checklist:**
+  - [ ] Create `schema/default.md` byte-equal to prior `DEFAULT_SCHEMA` constant
+  - [ ] Add `bootstrap_default_schema()` to `ephemeris/capture.py` (atomic copy, mtime-refresh, fail-soft)
+  - [ ] Wire `bootstrap_default_schema()` call into `hooks/post_session.py` and `hooks/pre_compact.py`
+  - [ ] Delete `ephemeris/model.py`, `prompts.py`, `merge.py`, `ingest.py`, `query.py`, `wiki.py`, `schema.py`
+  - [ ] Replace `commands/ingest.md` body with the SPEC-010 stub sentinel
+  - [ ] Replace `commands/query.md` body with the SPEC-011 stub sentinel
+  - [ ] Remove `anthropic` from `pyproject.toml`
+  - [ ] Strip `ANTHROPIC_API_KEY` from `README.md` + update architecture diagram + document bootstrap behavior
+  - [ ] Delete every test module that targets removed code
+  - [ ] Add `tests/spec_009/**` guard suite (no-anthropic-import, commands-are-stubs, pyproject-no-anthropic, readme-no-api-key, default-schema-file-exists, no-deleted-symbol-references, schema-bootstrap)
+  - [ ] Full suite green with `unset ANTHROPIC_API_KEY`
+
+**Deliverable:** *Install the plugin on a machine with no `ANTHROPIC_API_KEY` set. Hooks still stage transcripts. Slash commands emit the stub sentinel pointing at the next SPEC. Zero subprocess model calls remain.*
+
+### P3-B: Ingest Skill Body — DRAFT (SPEC-010)
+
+- **What:** Replace the SPEC-009 stub body of `commands/ingest.md` with full agent instructions the live Claude Code session follows to drain `~/.claude/ephemeris/staging/pending/*.jsonl` into the wiki. Schema resolution chain (`$EPHEMERIS_SCHEMA_PATH` → `~/.claude/ephemeris/schema.md` → `<wiki_root>/SCHEMA.md` → bootstrapped `default-schema.md`). Merge-into-existing pages, contradiction flagging, `Bash: mv` to `processed/` on success. Error handling: on `Write` failure, JSONL stays in `pending/` for next-run retry. Pre-merge canary eval against 10 fixture staged sessions.
+- **Depends on:** P3-A merged (stubs + infrastructure in place, bootstrap wired).
+- **Parallel with:** P3-C. No runtime dependency between the two skills.
+- **Risk:** MEDIUM. Runtime behavior change + ingestion quality risk. Mitigated by canary eval gate at ≥9/10.
+- **Checklist:**
+  - [ ] Replace `commands/ingest.md` body per SPEC-010 Skill Contract
+  - [ ] Commit fixture JSONLs under `tests/fixtures/staging/canary/`
+  - [ ] Add `tests/spec_010/**` static guard suite (body structure, keyword presence, negated stub sentinel)
+  - [ ] Run canary eval manually; paste results into PR
+  - [ ] Full suite green with `unset ANTHROPIC_API_KEY`
+  - [ ] Canary eval ≥ 9/10
+
+**Deliverable:** *`/ephemeris:ingest` drains the pending queue and writes wiki pages. Hooks stage, skill ingests, all in-session.*
+
+### P3-C: Query Skill Body — DRAFT (SPEC-011)
+
+- **What:** Replace the SPEC-009 stub body of `commands/query.md` with full agent instructions for a read-only query skill. Narrows `allowed-tools` to `[Read, Glob, Grep]` — no `Bash`, no `Write`. Body: parse question → resolve wiki root → `Glob` pages → `Grep` key terms → `Read` top 5 matches → answer **only** from read content → emit `## Sources` block. Explicit sentinels for empty wiki, missing wiki, no-match, and missing arguments. Grounding rule forbids claims not traceable to cited sources. Pre-merge canary eval against 10 fixture (wiki, question) pairs.
+- **Depends on:** P3-A merged (stubs in place, wiki directory resolution documented).
+- **Parallel with:** P3-B. No runtime dependency between the two skills.
+- **Risk:** LOW. Read-only skill; no wiki mutation path; grounding rule enforced by canary eval.
+- **Checklist:**
+  - [ ] Replace `commands/query.md` body per SPEC-011 Skill Contract
+  - [ ] Commit fixture wikis + `questions.yaml` under `tests/fixtures/wikis/canary/<name>/`
+  - [ ] Add `tests/spec_011/**` static guard suite (body structure, allowed-tools narrowing, sentinel strings, grounding-rule phrase, negated stub sentinel)
+  - [ ] Run canary eval manually; paste results into PR
+  - [ ] Full suite green with `unset ANTHROPIC_API_KEY`
+  - [ ] Canary eval ≥ 9/10
+
+**Deliverable:** *`/ephemeris:query "<question>"` returns cited answers drawn only from wiki pages. Unanswerable questions return the cannot-answer sentinel instead of hallucinations.*
+
+---
+
 ## Cross-Cutting Concerns
 
 These constraints apply across all phases. Reference NFRs from the PRD.
@@ -189,9 +260,12 @@ P0-A (scaffolding)
                     └── P1-B (wiki query)               ← parallel
                           ├── P2-A (scope config)       ← parallel
                           └── P2-B (custom schema)      ← parallel
+                                └── P3-A (rip + bootstrap + stub commands)
+                                      ├── P3-B (ingest skill body)  ← parallel
+                                      └── P3-C (query skill body)    ← parallel
 ```
 
-**Critical path:** P0-A → P0-B → P0-C → P0-D → [P1-A or P1-B] → [P2-A or P2-B]
+**Critical path:** P0-A → P0-B → P0-C → P0-D → [P1-A or P1-B] → [P2-A or P2-B] → P3-A → [P3-B or P3-C]
 
 ---
 
@@ -218,6 +292,9 @@ P0-A (scaffolding)
 | SPEC-006 | Wiki Query | IMPLEMENTED | 1 | P1-B |
 | SPEC-007 | Capture Scope Configuration | IMPLEMENTED | 2 | P2-A |
 | SPEC-008 | Custom Wiki Schema | IMPLEMENTED | 2 | P2-B |
+| SPEC-009 | Rip Subprocess + Bootstrap Default Schema + Stub Commands | DRAFT | 3 | P3-A |
+| SPEC-010 | Ingest Skill — Agent-Driven Body | DRAFT | 3 | P3-B |
+| SPEC-011 | Query Skill — Agent-Driven Body | DRAFT | 3 | P3-C |
 
 ---
 

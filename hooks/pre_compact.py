@@ -33,6 +33,9 @@ HOOK_TYPE = "pre-compact"
 
 
 def main() -> None:
+    from ephemeris.capture import bootstrap_default_schema
+    bootstrap_default_schema()
+
     payload = read_payload()
 
     # Scope check — runs immediately after payload parse, before any capture.
