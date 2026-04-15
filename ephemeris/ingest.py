@@ -220,56 +220,36 @@ def ingest_one(
                 log.log(session_id, "merge", "ok", f"Merging into existing page: {op.page_name!r}")
                 merge_result = model.merge_topic(existing_content, new_content_str, session_id)
 
-                # Apply additions (AC-2.3); skip if only duplicates (AC-2.2 safety)
-                if merge_result.additions or merge_result.conflicts:
-                    merged = apply_merge_additions(existing_content, merge_result.additions)
+                # Build merged content from existing + additions + conflicts + resolution
+                merged = apply_merge_additions(existing_content, merge_result.additions)
 
-                    # Detect + inject conflict blocks (Slice 3)
-                    if merge_result.conflicts:
-                        log.log(session_id, "detect", "ok",
-                                f"Conflicts detected in {op.page_name!r}: {len(merge_result.conflicts)}")
-                        merged = inject_conflict_blocks(merged, merge_result.conflicts)
-                    else:
-                        log.log(session_id, "detect", "ok", f"No conflicts in {op.page_name!r}")
-
-                    # Resolve existing conflict block if model affirmed one side (AC-3.4)
-                    if merge_result.affirmed_claim:
-                        merged = resolve_conflict_block(merged, merge_result.affirmed_claim)
-
-                    # Append citation
-                    if "## Sessions" in merged:
-                        merged = merged.rstrip() + f"\n{citation}\n"
-                    else:
-                        merged = merged.rstrip() + f"\n\n## Sessions\n{citation}\n"
-
-                    # Write merged content
-                    from ephemeris.wiki import _sanitize_page_name
-                    safe_name = _sanitize_page_name(op.page_name)
-                    if op.page_type == "topic":
-                        page_path = wiki_root / "topics" / f"{safe_name}.md"
-                    else:
-                        page_path = wiki_root / "entities" / f"{safe_name}.md"
-                    _atomic_write_text(page_path, merged)
-                    pages_written.append(page_path)
+                # Detect + inject conflict blocks (Slice 3 AC-3.1)
+                if merge_result.conflicts:
+                    log.log(session_id, "detect", "ok",
+                            f"Conflicts detected in {op.page_name!r}: {len(merge_result.conflicts)}")
+                    merged = inject_conflict_blocks(merged, merge_result.conflicts)
                 else:
-                    # Duplicate-only: no new facts, but still append the session citation
-                    # so the page records that this session was processed.
-                    log.log(session_id, "write", "ok",
-                            f"No new content for {op.page_name!r} (all duplicates); appending citation")
-                    from ephemeris.wiki import _sanitize_page_name
-                    safe_name = _sanitize_page_name(op.page_name)
-                    if op.page_type == "topic":
-                        page_path = wiki_root / "topics" / f"{safe_name}.md"
-                    else:
-                        page_path = wiki_root / "entities" / f"{safe_name}.md"
-                    # Append citation to existing content
-                    content_with_citation = existing_content
-                    if "## Sessions" in content_with_citation:
-                        content_with_citation = content_with_citation.rstrip() + f"\n{citation}\n"
-                    else:
-                        content_with_citation = content_with_citation.rstrip() + f"\n\n## Sessions\n{citation}\n"
-                    _atomic_write_text(page_path, content_with_citation)
-                    pages_written.append(page_path)
+                    log.log(session_id, "detect", "ok", f"No conflicts in {op.page_name!r}")
+
+                # Resolve existing conflict block if model affirmed one side (AC-3.4)
+                if merge_result.affirmed_claim:
+                    merged = resolve_conflict_block(merged, merge_result.affirmed_claim)
+
+                # Append citation
+                if "## Sessions" in merged:
+                    merged = merged.rstrip() + f"\n{citation}\n"
+                else:
+                    merged = merged.rstrip() + f"\n\n## Sessions\n{citation}\n"
+
+                # Write merged content (always, so citation is recorded)
+                from ephemeris.wiki import _sanitize_page_name
+                safe_name = _sanitize_page_name(op.page_name)
+                if op.page_type == "topic":
+                    page_path = wiki_root / "topics" / f"{safe_name}.md"
+                else:
+                    page_path = wiki_root / "entities" / f"{safe_name}.md"
+                _atomic_write_text(page_path, merged)
+                pages_written.append(page_path)
             else:
                 # New page — create as before (AC-2.4)
                 log.log(session_id, "merge", "ok", f"No existing page; creating: {op.page_name!r}")
