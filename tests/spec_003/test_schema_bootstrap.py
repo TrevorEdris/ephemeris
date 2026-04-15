@@ -22,6 +22,26 @@ def test_bootstrap_writes_schema_on_first_run(tmp_path: Path) -> None:
     assert schema_path.stat().st_size > 0
 
 
+def test_bootstrap_works_offline_no_network(tmp_path: Path, monkeypatch: object) -> None:
+    """AC-1.4: Schema bootstrap requires no network — works offline."""
+    import socket
+
+    from ephemeris.schema import bootstrap_schema
+
+    # Patch socket.socket to block any network attempt
+    def refuse_connect(*args: object, **kwargs: object) -> None:  # type: ignore[override]
+        raise OSError("Network access blocked in test")
+
+    monkeypatch.setattr(socket, "socket", refuse_connect)
+
+    wiki_root = tmp_path / "wiki"
+    wiki_root.mkdir()
+
+    # Must not raise even though network is blocked
+    bootstrap_schema(wiki_root)
+    assert (wiki_root / "SCHEMA.md").exists()
+
+
 def test_bootstrap_schema_content_has_all_page_types(tmp_path: Path) -> None:
     """AC-1.3: Bootstrapped schema contains all three page type definitions."""
     from ephemeris.schema import bootstrap_schema
