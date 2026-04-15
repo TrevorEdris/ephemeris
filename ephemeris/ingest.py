@@ -687,6 +687,13 @@ def main(argv: "list[str] | None" = None) -> None:
         transcript_path = candidates[0]
 
         print(f"[1/1] Ingesting session {args.session_id}...", flush=True)
+
+        from ephemeris.schema import resolve_schema
+
+        # AC-2: auto-discover user schema for single-session mode (mirrors batch path)
+        _user_schema_path = Path.home() / ".claude" / "ephemeris" / "schema.md"
+        _resolved_schema = resolve_schema(wiki_root, user_schema_path=_user_schema_path)
+
         result_one = ingest_one(
             transcript_path=transcript_path,
             wiki_root=wiki_root,
@@ -695,6 +702,7 @@ def main(argv: "list[str] | None" = None) -> None:
             session_id=args.session_id,
             session_date=today,
             dry_run=args.dry_run,
+            schema_text=_resolved_schema,
         )
 
         if result_one.success:
