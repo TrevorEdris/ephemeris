@@ -8,14 +8,17 @@ Ingestion logic lands in SPEC-002/SPEC-003.
 
 import json
 import sys
+from pathlib import Path
+
+# Ensure the hooks package root is on sys.path so _lib is importable
+# whether this script is invoked directly or via ${CLAUDE_PLUGIN_ROOT}.
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _lib.payload import read_payload  # noqa: E402
 
 
 def main() -> None:
-    stdin_data = sys.stdin.read()
-    try:
-        payload: dict = json.loads(stdin_data)
-    except (json.JSONDecodeError, TypeError):
-        payload = {}
+    payload = read_payload()
 
     # stub: ingestion logic not yet implemented
     _ = payload
