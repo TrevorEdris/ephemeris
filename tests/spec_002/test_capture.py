@@ -71,3 +71,33 @@ def test_capture_session_end_writes_to_session_end_subdir(tmp_path: Path) -> Non
     dest = staging_root / "session-end" / "sess-456.jsonl"
     assert dest.exists(), f"Expected staged file at {dest}"
     assert dest.read_bytes() == jsonl_content
+
+
+# ---------------------------------------------------------------------------
+# Step 5 RED: Idempotent on identical content
+# ---------------------------------------------------------------------------
+
+
+def test_capture_idempotent_identical_content(tmp_path: Path) -> None:
+    """AC-3: Calling capture twice with identical payload leaves exactly one file."""
+    from ephemeris.capture import capture
+
+    jsonl_content = b'{"role":"user","content":"idempotent"}\n'
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_file.write_bytes(jsonl_content)
+
+    payload = {
+        "session_id": "idem-001",
+        "transcript_path": str(transcript_file),
+    }
+    staging_root = tmp_path / "staging"
+
+    capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+    capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    dest = staging_root / "pre-compact" / "idem-001.jsonl"
+    assert dest.exists()
+    assert dest.read_bytes() == jsonl_content
+    # Exactly one file in the directory (no duplicate with different name)
+    staged_files = list((staging_root / "pre-compact").iterdir())
+    assert len(staged_files) == 1
