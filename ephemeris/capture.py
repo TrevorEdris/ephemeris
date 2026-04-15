@@ -100,18 +100,32 @@ def stage_transcript(
         staging_root: Root directory for staging storage.
         hook_type: Hook type string used as the subdirectory name.
         session_id: Session identifier used as the filename stem.
+            Must not contain path separators or resolve outside the staging
+            root. Raises InvalidPayloadError if either constraint is violated.
         src: Source transcript file path (must exist and be non-empty).
 
     Returns:
         Path to the staged file.
 
     Raises:
+        InvalidPayloadError: If session_id contains path separators or would
+            resolve to a path outside the staging directory.
         StagingUnavailableError: If the staging directory cannot be created
             or written to.
         TruncatedWriteError: If the number of bytes written does not match
             the source file size.
     """
-    from ephemeris.exceptions import StagingUnavailableError, TruncatedWriteError
+    from ephemeris.exceptions import InvalidPayloadError, StagingUnavailableError, TruncatedWriteError
+
+    # Layer 1: Reject session_id values that carry path components.
+    # Path(session_id).name strips leading directories; if it differs from the
+    # original the caller passed a value with path separators (e.g. '../evil'
+    # or '/tmp/evil' or 'legit/../escape').
+    safe_session_id = Path(session_id).name
+    if safe_session_id != session_id:
+        raise InvalidPayloadError(
+            f"session_id contains path separators: {session_id!r}"
+        )
 
     dest_dir = staging_root / hook_type
     try:
@@ -122,6 +136,18 @@ def stage_transcript(
         ) from exc
 
     dest_path = dest_dir / f"{session_id}.jsonl"
+
+    # Layer 2: Belt-and-suspenders containment check.  Resolve both paths and
+    # verify dest_path is a descendant of dest_dir.  This catches symlink-based
+    # escapes that Path.name alone cannot prevent.
+    try:
+        resolved_dest = dest_path.resolve()
+        resolved_dir = dest_dir.resolve()
+        resolved_dest.relative_to(resolved_dir)
+    except ValueError as exc:
+        raise InvalidPayloadError(
+            f"session_id resolves outside staging directory: {session_id!r}"
+        ) from exc
     source_bytes = src.read_bytes()
 
     # Atomic write: write to temp file in same dir, then rename.
