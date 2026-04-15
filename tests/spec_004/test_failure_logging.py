@@ -303,3 +303,80 @@ def test_successful_run_produces_complete_ok_log_entry(tmp_path: Path) -> None:
     ]
     assert complete_ok, f"No complete/ok log entry found. Entries: {entries}"
     assert "ts" in complete_ok[0]
+
+
+# ---------------------------------------------------------------------------
+# AC-4.1: detect phase failure produces log entry (not spurious write, error)
+# ---------------------------------------------------------------------------
+
+def test_detect_phase_failure_produces_log_entry(tmp_path: Path, monkeypatch) -> None:
+    """AC-4.1: When inject_conflict_blocks raises, the pipeline logs detect/error.
+    There must NOT be a spurious write/error entry for the same fault."""
+    import ephemeris.merge as merge_mod
+    from ephemeris.ingest import ingest_one
+    from ephemeris.log import IngestLogger
+    from ephemeris.model import FakeModelClient, MergeResult, ConflictPair
+
+    wiki_root = tmp_path / "wiki"
+    log_path = tmp_path / "ingest.log"
+
+    # Pre-existing page so the merge path is taken
+    topics_dir = wiki_root / "topics"
+    topics_dir.mkdir(parents=True)
+    (topics_dir / "conflict-topic.md").write_text(
+        "# Conflict Topic\n\nOld claim.\n\n## Sessions\n> Source: [2026-04-14 sess-old]\n",
+        encoding="utf-8",
+    )
+
+    transcript = _make_transcript(tmp_path, "sess-detectfail", "conflict topic content")
+
+    # FakeModelClient that returns a conflict so inject_conflict_blocks is called
+    merge_result_with_conflict = MergeResult(
+        additions=[],
+        duplicates=[],
+        conflicts=[ConflictPair(
+            existing_claim="Old claim.",
+            new_claim="New contradicting claim.",
+            existing_session_id="sess-old",
+            new_session_id="sess-detectfail",
+        )],
+    )
+
+    # Monkeypatch inject_conflict_blocks to raise
+    monkeypatch.setattr(
+        merge_mod,
+        "inject_conflict_blocks",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("Injected detect failure")),
+    )
+
+    result = ingest_one(
+        transcript_path=transcript,
+        wiki_root=wiki_root,
+        model=FakeModelClient(
+            response=json.dumps({
+                "operations": [{
+                    "action": "update",
+                    "page_type": "topic",
+                    "page_name": "conflict-topic",
+                    "content": {"overview": "New contradicting claim."},
+                    "cross_references": [],
+                }]
+            }),
+            merge_result=merge_result_with_conflict,
+        ),
+        log=IngestLogger(log_path),
+        session_id="sess-detectfail",
+        session_date="2026-04-15",
+    )
+
+    assert not result.success
+
+    entries = _read_log(log_path)
+    detect_errors = [
+        e for e in entries
+        if e.get("session_id") == "sess-detectfail"
+        and e.get("phase") == "detect"
+        and e.get("status") == "error"
+    ]
+    assert detect_errors, f"No detect/error log entry found. Entries: {entries}"
+    assert detect_errors[0].get("message"), "detect/error entry must have a message"

@@ -257,7 +257,13 @@ def ingest_one(
                     elapsed = int((time.monotonic() - start_ts) * 1000)
                     log.log(session_id, "detect", "error",
                             f"detect/inject failed for {op.page_name!r}: {detect_exc}", elapsed)
-                    raise
+                    _write_error_marker(transcript_path, str(detect_exc), dry_run)
+                    return PageResult(
+                        success=False,
+                        session_id=session_id,
+                        pages_written=pages_written,
+                        error=str(detect_exc),
+                    )
 
                 # Append citation
                 if "## Sessions" in merged:

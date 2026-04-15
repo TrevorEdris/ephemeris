@@ -17,11 +17,33 @@ Environment:
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     pass
+
+
+_CITATION_RE = re.compile(r"^> Source:\s*\[[\d-]+\s+([^\]]+)\]\s*$", re.MULTILINE)
+
+
+def _extract_latest_session_id(page_content: str) -> str:
+    """Extract the most recent session ID from citation lines in a wiki page.
+
+    Citation lines have the format:
+        > Source: [YYYY-MM-DD session-id]
+
+    Returns the last matching session ID, or "unknown" if none found.
+
+    Args:
+        page_content: Full text of a wiki page.
+
+    Returns:
+        Session ID string, or "unknown".
+    """
+    matches = _CITATION_RE.findall(page_content)
+    return matches[-1] if matches else "unknown"
 
 
 @dataclass
@@ -205,8 +227,9 @@ class AnthropicModelClient:
         except Exception as exc:
             raise ModelClientError(f"Anthropic merge API call failed: {exc}") from exc
 
-        # We don't know the existing_session_id here; use a placeholder
-        return parse_merge_response(raw, session_id, existing_session_id="unknown")
+        # Extract the existing session ID from the last citation in the page
+        existing_session_id = _extract_latest_session_id(existing)
+        return parse_merge_response(raw, session_id, existing_session_id=existing_session_id)
 
 
 class FakeModelClient:
