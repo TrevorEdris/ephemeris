@@ -22,6 +22,23 @@ def test_bootstrap_writes_schema_on_first_run(tmp_path: Path) -> None:
     assert schema_path.stat().st_size > 0
 
 
+def test_bootstrap_schema_content_has_all_page_types(tmp_path: Path) -> None:
+    """AC-1.3: Bootstrapped schema contains all three page type definitions."""
+    from ephemeris.schema import bootstrap_schema
+
+    wiki_root = tmp_path / "wiki"
+    wiki_root.mkdir()
+    bootstrap_schema(wiki_root)
+
+    content = (wiki_root / "SCHEMA.md").read_text(encoding="utf-8")
+    assert "wiki/topics/" in content, "Schema must define Topic page directory"
+    assert "wiki/entities/" in content, "Schema must define Entity page directory"
+    assert "DECISIONS.md" in content, "Schema must define Decision Log file"
+    # Naming conventions present
+    assert "kebab-case" in content, "Schema must specify kebab-case for topics"
+    assert "PascalCase" in content, "Schema must specify PascalCase for entities"
+
+
 def test_bootstrap_skips_existing_schema(tmp_path: Path) -> None:
     """AC-1.2: Given existing SCHEMA.md, bootstrap does not overwrite it."""
     from ephemeris.schema import bootstrap_schema
