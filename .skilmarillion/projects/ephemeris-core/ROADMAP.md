@@ -2,17 +2,17 @@
 
 ## Current Status
 
-**Phase:** 0 — Not Started
+**Phase:** 0 — In Progress
 **Last Updated:** 2026-04-15
 
 ### Completed
-*(none)*
+- [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
 
 ### In Progress
 *(none)*
 
 ### Pending
-- [ ] Phase 0: Silent Wiki
+- [ ] Phase 0: Silent Wiki (P0-B through P0-D remaining)
 - [ ] Phase 1: Power-User Surface
 - [ ] Phase 2: Customization Layer
 
@@ -30,17 +30,17 @@ Build the silent loop first and prove it. No visible surface until background in
 
 **Exit Criteria:** Installing the plugin and completing one session produces a populated global markdown wiki with no user configuration, commands, or input of any kind. A second session incrementally updates the wiki without duplication; contradictions are flagged.
 
-### P0-A: Plugin Scaffolding + Hook Registration
+### P0-A: Plugin Scaffolding + Hook Registration ✓ IMPLEMENTED
 
 - **What:** Stand up the plugin structure so that Claude Code recognizes it on install and registers hook entry points. No ingestion logic yet — just wiring.
 - **Depends on:** Nothing
 - **Risk:** Claude Code hook API surface may differ from expectations; validate hook payload format early.
 - **Checklist:**
-  - [ ] Define plugin manifest with skills, hooks, and agents directory structure
-  - [ ] Register pre-compaction hook entry point
-  - [ ] Register post-session hook entry point
-  - [ ] Verify plugin loads cleanly with zero user configuration on a fresh install
-  - [ ] Verify both hooks fire and their payloads are accessible (log payload shape for P0-B)
+  - [x] Define plugin manifest with skills, hooks, and agents directory structure
+  - [x] Register pre-compaction hook entry point
+  - [x] Register post-session hook entry point
+  - [x] Verify plugin loads cleanly with zero user configuration on a fresh install
+  - [x] Verify both hooks fire and their payloads are accessible (log payload shape for P0-B)
 
 ### P0-B: Transcript Capture
 
@@ -196,7 +196,7 @@ P0-A (scaffolding)
 
 | ID | Name | Status | Phase | Roadmap Ref |
 |----|------|--------|-------|-------------|
-| SPEC-001 | Plugin Scaffolding + Hook Registration | DRAFT | 0 | P0-A |
+| SPEC-001 | Plugin Scaffolding + Hook Registration | IMPLEMENTED | 0 | P0-A |
 | SPEC-002 | Transcript Capture | DRAFT | 0 | P0-B |
 | SPEC-003 | Wiki Ingestion Engine | DRAFT | 0 | P0-C |
 | SPEC-004 | Incremental Update + Contradiction Detection | DRAFT | 0 | P0-D |
