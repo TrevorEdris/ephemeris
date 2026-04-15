@@ -3,7 +3,7 @@
 **Feature ID:** P1-B
 **Size:** SMALL
 **Risk:** MODERATE
-**Status:** DRAFT
+**Status:** IMPLEMENTED
 
 ## Problem Statement
 

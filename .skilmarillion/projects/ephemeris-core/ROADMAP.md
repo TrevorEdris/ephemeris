@@ -3,11 +3,12 @@
 ## Current Status
 
 **Phase:** 1 — In Progress
-**Last Updated:** 2026-04-15 (PR #10 — P1-A SPEC-005 implemented)
+**Last Updated:** 2026-04-15 (PR #11 — P1-B SPEC-006 implemented)
 **P0-B Completed:** 2026-04-15
 **P0-C Completed:** 2026-04-15
 **P0-D Completed:** 2026-04-15
 **P1-A Completed:** 2026-04-15
+**P1-B Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
@@ -15,6 +16,7 @@
 - [x] P0-C: Wiki Ingestion Engine (feat/spec-003-wiki-ingestion-engine)
 - [x] P0-D: Incremental Update + Contradiction Detection (feat/spec-004-incremental-update, PR #9 https://github.com/TrevorEdris/ephemeris/pull/9)
 - [x] P1-A: Manual Ingest Trigger (feat/spec-005-manual-ingest-trigger, PR #10)
+- [x] P1-B: Wiki Query (feat/spec-006-wiki-query, PR #11)
 
 ### In Progress
 *(none)*
@@ -110,17 +112,17 @@ Build the silent loop first and prove it. No visible surface until background in
   - [x] Show completion summary (pages created, pages updated)
   - [x] Verify running the command twice on the same sessions produces no duplicate content
 
-### P1-B: Wiki Query
+### P1-B: Wiki Query ✓ IMPLEMENTED
 
 - **What:** A slash command accepts a natural language question and returns an answer synthesized from wiki content, with citations to the source pages used.
 - **Depends on:** P0-D
 - **Risk:** Query answers are only as good as the wiki content; poor ingestion quality will surface here. Explicit "I don't know" handling is required to prevent hallucination.
 - **Checklist:**
-  - [ ] Implement slash command that accepts a natural language question
-  - [ ] Search wiki pages for relevant content
-  - [ ] Synthesize an answer with citations referencing the specific wiki pages used
-  - [ ] Respond explicitly and clearly when the wiki cannot answer the question
-  - [ ] Verify answers are drawn from wiki content, not from model training data alone
+  - [x] Implement slash command that accepts a natural language question
+  - [x] Search wiki pages for relevant content
+  - [x] Synthesize an answer with citations referencing the specific wiki pages used
+  - [x] Respond explicitly and clearly when the wiki cannot answer the question
+  - [x] Verify answers are drawn from wiki content, not from model training data alone
 
 **Deliverable:** *Users can run a slash command to trigger ingestion on demand and ask the wiki questions like "what did we decide about authentication last week?" and receive cited answers.*
 
@@ -209,7 +211,7 @@ P0-A (scaffolding)
 | SPEC-003 | Wiki Ingestion Engine | IMPLEMENTED | 0 | P0-C |
 | SPEC-004 | Incremental Update + Contradiction Detection | IMPLEMENTED | 0 | P0-D |
 | SPEC-005 | Manual Ingest Trigger | IMPLEMENTED | 1 | P1-A |
-| SPEC-006 | Wiki Query | DRAFT | 1 | P1-B |
+| SPEC-006 | Wiki Query | IMPLEMENTED | 1 | P1-B |
 | SPEC-007 | Capture Scope Configuration | DRAFT | 2 | P2-A |
 | SPEC-008 | Custom Wiki Schema | DRAFT | 2 | P2-B |
 
