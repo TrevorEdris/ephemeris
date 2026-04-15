@@ -15,7 +15,6 @@ and the hook exits 0 — never disturbing the Claude Code session (SPEC-001 AC-7
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -27,17 +26,26 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from _lib.payload import read_payload  # noqa: E402
+from _lib.staging_root import resolve_staging_root  # noqa: E402
 
 HOOK_TYPE = "pre-compact"
-DEFAULT_STAGING_ROOT = Path.home() / ".claude" / "ephemeris" / "staging"
 
 
 def main() -> None:
     payload = read_payload()
 
-    staging_root = Path(
-        os.environ.get("EPHEMERIS_STAGING_ROOT", str(DEFAULT_STAGING_ROOT))
-    )
+    staging_root = resolve_staging_root()
+    if staging_root is None:
+        # EPHEMERIS_STAGING_ROOT is set to an invalid value (empty or relative).
+        # Log to stderr and exit 0 to maintain hook isolation — never disturb
+        # the Claude Code session.
+        print(
+            "ephemeris: EPHEMERIS_STAGING_ROOT must be absolute (or unset). "
+            "Skipping capture.",
+            file=sys.stderr,
+        )
+        print(json.dumps({}))
+        return
 
     try:
         from ephemeris.capture import capture
