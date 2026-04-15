@@ -7,7 +7,7 @@ replaced before the failure. If the process is SIGKILLed mid-run, the next
 startup detects the orphaned journal and restores the pre-run state before
 starting the new ingest.
 
-Per-file writes use _atomic_write_text so no partial file is ever observable.
+Per-file writes use _atomic_write so no partial file is ever observable.
 
 Public API:
     StageWriter — context manager for all-or-nothing wiki writes
@@ -16,6 +16,8 @@ Public API:
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,16 +26,34 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ephemeris.log import IngestLogger
 
-import ephemeris.wiki as _wiki_mod
-
 
 def _atomic_write(path: Path, content: str) -> None:
-    """Thin wrapper that always delegates through the module reference.
+    """Write content to path atomically using a temp file + os.replace.
 
-    This indirection lets tests monkeypatch ``ephemeris.wiki._atomic_write_text``
-    and have StageWriter pick up the patched version at call time.
+    Creates the parent directory if absent. Guarantees readers never see
+    partial content and no orphaned temp file remains on crash.
+
+    Args:
+        path: Destination path.
+        content: UTF-8 text to write.
     """
-    _wiki_mod._atomic_write_text(path, content)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            delete=False,
+            suffix=".tmp",
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(content)
+        os.replace(tmp_path, path)
+    except Exception:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        raise
 
 
 @dataclass

@@ -1,0 +1,3 @@
+{"type": "user", "content": "What naming convention should we use for config keys? Some use camelCase, some use snake_case.", "timestamp": "2026-03-07T14:10:33Z"}
+{"type": "assistant", "content": "For environment variables: SCREAMING_SNAKE_CASE. For config file keys (YAML/JSON): snake_case. For programmatic access in Python: snake_case properties on a dataclass. This matches what the stdlib and most Python tooling expect.", "timestamp": "2026-03-07T14:10:41Z"}
+{"type": "user", "content": "Agreed. Let's enforce that. Update the existing camelCase keys in config.yaml.", "timestamp": "2026-03-07T14:10:58Z"}

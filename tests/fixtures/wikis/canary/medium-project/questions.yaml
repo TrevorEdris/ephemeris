@@ -1,0 +1,40 @@
+questions:
+  - q: "What did we decide about rate limiting?"
+    expected_sources: ["DECISIONS.md", "topics/rate-limiting.md"]
+    answerable: true
+
+  - q: "How are rate limit counters stored?"
+    expected_sources: ["DECISIONS.md", "topics/rate-limiting.md"]
+    answerable: true
+
+  - q: "What TLS approach does Orchid use?"
+    expected_sources: ["DECISIONS.md", "topics/tls-configuration.md"]
+    answerable: true
+
+  - q: "How does request routing work in Orchid?"
+    expected_sources: ["topics/request-routing.md", "entities/Router.md"]
+    answerable: true
+
+  - q: "What Prometheus metrics does Orchid expose?"
+    expected_sources: ["topics/observability.md"]
+    answerable: true
+
+  - q: "What is the Gateway entity?"
+    expected_sources: ["entities/Gateway.md"]
+    answerable: true
+
+  - q: "How does canary routing work?"
+    expected_sources: ["topics/request-routing.md", "entities/Router.md"]
+    answerable: true
+
+  - q: "What happens when a route is not found?"
+    expected_sources: ["topics/request-routing.md"]
+    answerable: true
+
+  - q: "Does Orchid support automatic database failover?"
+    expected_sources: []
+    answerable: false
+
+  - q: "How do I configure Orchid to send traces to Datadog?"
+    expected_sources: []
+    answerable: false

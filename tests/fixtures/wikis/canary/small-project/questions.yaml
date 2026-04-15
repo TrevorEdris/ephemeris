@@ -1,0 +1,20 @@
+questions:
+  - q: "What did we decide about storing job state?"
+    expected_sources: ["DECISIONS.md"]
+    answerable: true
+
+  - q: "How do workers authenticate to the coordinator?"
+    expected_sources: ["topics/worker-authentication.md", "DECISIONS.md"]
+    answerable: true
+
+  - q: "What happens when a job fails three times?"
+    expected_sources: ["topics/job-scheduling.md"]
+    answerable: true
+
+  - q: "What is the JobQueue entity?"
+    expected_sources: ["entities/JobQueue.md"]
+    answerable: true
+
+  - q: "How does Skyhook handle quantum teleportation of job payloads?"
+    expected_sources: []
+    answerable: false
