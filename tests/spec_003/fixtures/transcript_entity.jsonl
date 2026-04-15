@@ -1,0 +1,5 @@
+{"type": "system", "content": "Session started.", "timestamp": "2026-04-15T12:00:00Z"}
+{"type": "user", "content": "Explain the IngestEngine component.", "timestamp": "2026-04-15T12:00:01Z"}
+{"type": "assistant", "content": "The IngestEngine processes staged transcripts through the Claude model to extract structured knowledge. It depends on the ModelClient for model invocation and writes results to the wiki directory. The IngestEngine is consumed by the PostSessionHook.", "timestamp": "2026-04-15T12:00:10Z"}
+{"type": "user", "content": "What is its relationship with ModelClient?", "timestamp": "2026-04-15T12:00:20Z"}
+{"type": "assistant", "content": "IngestEngine depends on ModelClient via protocol/interface. ModelClient abstracts the Anthropic API. The relationship is: IngestEngine calls ModelClient.invoke() with a prompt, receives a JSON response, and parses it into page operations.", "timestamp": "2026-04-15T12:00:30Z"}

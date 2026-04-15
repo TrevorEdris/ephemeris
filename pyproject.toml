@@ -1,2 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ephemeris"
+version = "0.3.0"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

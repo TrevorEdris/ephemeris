@@ -5,6 +5,7 @@
 **Phase:** 0 — In Progress
 **Last Updated:** 2026-04-15
 **P0-B Completed:** 2026-04-15
+**P0-C Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
@@ -14,7 +15,8 @@
 *(none)*
 
 ### Pending
-- [ ] Phase 0: Silent Wiki (P0-C through P0-D remaining)
+- [x] P0-C: Wiki Ingestion Engine (feat/spec-003-wiki-ingestion-engine)
+- [ ] Phase 0: Silent Wiki (P0-D remaining)
 - [ ] Phase 1: Power-User Surface
 - [ ] Phase 2: Customization Layer
 
@@ -56,19 +58,19 @@ Build the silent loop first and prove it. No visible surface until background in
   - [x] Verify captured transcript is complete (not truncated) for a typical 60-minute session
   - [x] Verify capture is idempotent: re-running on the same session produces the same stored result
 
-### P0-C: Wiki Ingestion Engine
+### P0-C: Wiki Ingestion Engine ✓ IMPLEMENTED
 
 - **What:** Process a captured transcript through the active Claude model, extract key knowledge (decisions, patterns, conventions, rationale), and write it to the global markdown wiki. First run creates pages from scratch.
 - **Depends on:** P0-B
 - **Risk:** Largest scope item in Phase 0. Default wiki schema must be designed and embedded before this can produce useful output. Context window may be tight for very long sessions — chunk if needed.
 - **Note:** Default wiki schema (page types, naming conventions, cross-reference format) is defined here as part of the ingestion prompt, not as a separate artifact.
 - **Checklist:**
-  - [ ] Design default wiki schema: define page types (topic pages, entity pages, decision log), naming conventions, and cross-reference format
-  - [ ] Implement ingestion: process transcript → extract knowledge → write markdown wiki pages
-  - [ ] Write pages with consistent headings, cross-references, and source citations
-  - [ ] Store wiki in a single global directory accessible regardless of active project
-  - [ ] Verify wiki pages appear after a session ends with no user action
-  - [ ] Verify no external API calls are made during ingestion (active model only)
+  - [x] Design default wiki schema: define page types (topic pages, entity pages, decision log), naming conventions, and cross-reference format
+  - [x] Implement ingestion: process transcript → extract knowledge → write markdown wiki pages
+  - [x] Write pages with consistent headings, cross-references, and source citations
+  - [x] Store wiki in a single global directory accessible regardless of active project
+  - [x] Verify wiki pages appear after a session ends with no user action
+  - [x] Verify no external API calls are made during ingestion (active model only)
 
 ### P0-D: Incremental Update + Contradiction Detection
 
@@ -200,7 +202,7 @@ P0-A (scaffolding)
 |----|------|--------|-------|-------------|
 | SPEC-001 | Plugin Scaffolding + Hook Registration | IMPLEMENTED | 0 | P0-A |
 | SPEC-002 | Transcript Capture | IMPLEMENTED | 0 | P0-B |
-| SPEC-003 | Wiki Ingestion Engine | DRAFT | 0 | P0-C |
+| SPEC-003 | Wiki Ingestion Engine | IMPLEMENTED | 0 | P0-C |
 | SPEC-004 | Incremental Update + Contradiction Detection | DRAFT | 0 | P0-D |
 | SPEC-005 | Manual Ingest Trigger | DRAFT | 1 | P1-A |
 | SPEC-006 | Wiki Query | DRAFT | 1 | P1-B |

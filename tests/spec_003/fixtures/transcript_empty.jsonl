@@ -1,0 +1,5 @@
+{"type": "system", "content": "Session started.", "timestamp": "2026-04-15T13:00:00Z"}
+{"type": "user", "content": "Hello!", "timestamp": "2026-04-15T13:00:01Z"}
+{"type": "assistant", "content": "Hello! How can I help you today?", "timestamp": "2026-04-15T13:00:02Z"}
+{"type": "user", "content": "Nothing, just checking in.", "timestamp": "2026-04-15T13:00:05Z"}
+{"type": "assistant", "content": "Happy to chat whenever you need!", "timestamp": "2026-04-15T13:00:06Z"}
