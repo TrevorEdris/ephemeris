@@ -107,17 +107,35 @@ def ingest_one(
     """
     from ephemeris.exceptions import ParseResponseError
     from ephemeris.log import IngestLogger
+    from ephemeris.merge import apply_merge_additions, inject_conflict_blocks, resolve_conflict_block
     from ephemeris.prompts import build_system_prompt, build_user_prompt, parse_response
     from ephemeris.schema import bootstrap_schema
+    from ephemeris.stage import StageWriter
     from ephemeris.transcript import load_transcript, transcript_to_text
-    from ephemeris.wiki import add_cross_references, write_page
+    from ephemeris.wiki import (
+        _atomic_write_text,
+        add_cross_references,
+        build_new_page_content,
+        write_page,
+        _load_page,
+    )
+
+    # Recover any orphan journals from prior crashed runs before starting new work
+    StageWriter.recover_orphans(wiki_root, log)
 
     start_ts = time.monotonic()
     citation = f"> Source: [{session_date} {session_id}]"
 
     # --- Stage 1: Parse transcript ---
     log.log(session_id, "parse", "ok", f"Loading transcript: {transcript_path}")
-    load_result = load_transcript(transcript_path)
+    try:
+        load_result = load_transcript(transcript_path)
+    except Exception as exc:
+        elapsed = int((time.monotonic() - start_ts) * 1000)
+        log.log(session_id, "parse", "error", f"Transcript parse failed: {exc}", elapsed)
+        _write_error_marker(transcript_path, str(exc), dry_run)
+        return PageResult(success=False, session_id=session_id, error=str(exc))
+
     if load_result.skipped_lines > 0:
         log.log(
             session_id,
@@ -190,22 +208,112 @@ def ingest_one(
     # Build page_type_map for cross-reference resolution
     page_type_map: dict[str, str] = {op.page_name: op.page_type for op in operations}
 
+    # --- Collect all merged content in-memory, then commit via StageWriter ---
+    # This satisfies AC-1.1: all writes land atomically with journal-based rollback.
+    pending_writes: list[tuple[Path, str]] = []  # (path, content)
+
     for op in operations:
         log.log(session_id, "write", "ok", f"Writing {op.page_type} page: {op.page_name!r}")
         try:
             from ephemeris.exceptions import WikiWriteError
 
-            page_path = write_page(op, wiki_root, citation)
-            pages_written.append(page_path)
+            # --- SPEC-004 Slice 2 & 3: Merge with existing page if present ---
+            existing_content = _load_page(op, wiki_root)
+            if existing_content is not None and op.page_type in ("topic", "entity"):
+                new_content_str = _op_new_content_str(op)
+
+                # Call merge_topic — returns MergeResult (Slice 2)
+                log.log(session_id, "merge", "ok", f"Merging into existing page: {op.page_name!r}")
+                try:
+                    merge_result = model.merge_topic(existing_content, new_content_str, session_id)
+                except Exception as merge_exc:
+                    elapsed = int((time.monotonic() - start_ts) * 1000)
+                    log.log(session_id, "merge", "error",
+                            f"merge_topic failed for {op.page_name!r}: {merge_exc}", elapsed)
+                    _write_error_marker(transcript_path, str(merge_exc), dry_run)
+                    return PageResult(
+                        success=False,
+                        session_id=session_id,
+                        pages_written=pages_written,
+                        error=str(merge_exc),
+                    )
+
+                # Apply net-new additions (AC-2.3)
+                merged = apply_merge_additions(existing_content, merge_result.additions)
+
+                # Detect + inject conflict blocks (Slice 3 AC-3.1)
+                try:
+                    if merge_result.conflicts:
+                        log.log(session_id, "detect", "ok",
+                                f"Conflicts detected in {op.page_name!r}: {len(merge_result.conflicts)}")
+                        merged = inject_conflict_blocks(merged, merge_result.conflicts)
+                    else:
+                        log.log(session_id, "detect", "ok", f"No conflicts in {op.page_name!r}")
+
+                    # Resolve existing conflict block if affirmed (AC-3.4)
+                    if merge_result.affirmed_claim:
+                        merged = resolve_conflict_block(merged, merge_result.affirmed_claim)
+                except Exception as detect_exc:
+                    elapsed = int((time.monotonic() - start_ts) * 1000)
+                    log.log(session_id, "detect", "error",
+                            f"detect/inject failed for {op.page_name!r}: {detect_exc}", elapsed)
+                    _write_error_marker(transcript_path, str(detect_exc), dry_run)
+                    return PageResult(
+                        success=False,
+                        session_id=session_id,
+                        pages_written=pages_written,
+                        error=str(detect_exc),
+                    )
+
+                # Append citation
+                if "## Sessions" in merged:
+                    merged = merged.rstrip() + f"\n{citation}\n"
+                else:
+                    merged = merged.rstrip() + f"\n\n## Sessions\n{citation}\n"
+
+                page_path = _page_path_for_op(op, wiki_root)
+                pending_writes.append((page_path, merged))
+                pages_written.append(page_path)
+            else:
+                # New topic/entity page or decision (AC-2.4)
+                log.log(session_id, "merge", "ok", f"No existing page; creating: {op.page_name!r}")
+                log.log(session_id, "detect", "ok", f"New page, no conflict check: {op.page_name!r}")
+                if op.page_type in ("topic", "entity"):
+                    # Route through StageWriter for transactional protection
+                    page_path, new_content = build_new_page_content(op, wiki_root, citation)
+                    pending_writes.append((page_path, new_content))
+                    pages_written.append(page_path)
+                else:
+                    # Decision pages: always append-only, no pre-run state to protect
+                    page_path = write_page(op, wiki_root, citation)
+                    pages_written.append(page_path)
         except Exception as exc:
             elapsed = int((time.monotonic() - start_ts) * 1000)
             log.log(session_id, "write", "error", f"Failed to write {op.page_name!r}: {exc}", elapsed)
-            # Failure on any page write aborts the whole run to prevent partial writes
+            # Failure on any page write aborts the whole run
             _write_error_marker(transcript_path, str(exc), dry_run)
             return PageResult(
                 success=False,
                 session_id=session_id,
                 pages_written=pages_written,
+                error=str(exc),
+            )
+
+    # Commit all topic/entity writes transactionally via StageWriter (AC-1.1)
+    if pending_writes:
+        try:
+            with StageWriter(wiki_root, log) as stage:
+                for page_path, content in pending_writes:
+                    stage.stage_write(page_path, content)
+        except Exception as exc:
+            elapsed = int((time.monotonic() - start_ts) * 1000)
+            log.log(session_id, "write", "error",
+                    f"Transactional write failed, rolled back: {exc}", elapsed)
+            _write_error_marker(transcript_path, str(exc), dry_run)
+            return PageResult(
+                success=False,
+                session_id=session_id,
+                pages_written=[],
                 error=str(exc),
             )
 
@@ -287,6 +395,40 @@ def ingest_all(
         result.results.append(page_result)
 
     return result
+
+
+def _op_new_content_str(op: "PageOperation") -> str:  # type: ignore[name-defined]  # noqa: F821
+    """Extract a plain-text summary of new content from a PageOperation.
+
+    Used as the ``new`` argument to ``model.merge_topic`` so the model can
+    compare it against existing page content.
+    """
+    parts: list[str] = []
+    if op.page_type == "topic":
+        if op.content.get("overview"):
+            parts.append(op.content["overview"])
+        if op.content.get("details"):
+            parts.append(op.content["details"])
+    elif op.page_type == "entity":
+        if op.content.get("role"):
+            parts.append(op.content["role"])
+    return "\n".join(parts)
+
+
+def _page_path_for_op(op: "PageOperation", wiki_root: Path) -> Path:  # type: ignore[name-defined]  # noqa: F821
+    """Return the target wiki file path for a topic or entity operation.
+
+    Raises:
+        ValueError: If op.page_type is not 'topic' or 'entity'.
+    """
+    from ephemeris.wiki import _sanitize_page_name
+
+    safe_name = _sanitize_page_name(op.page_name)
+    if op.page_type == "topic":
+        return wiki_root / "topics" / f"{safe_name}.md"
+    elif op.page_type == "entity":
+        return wiki_root / "entities" / f"{safe_name}.md"
+    raise ValueError(f"Unsupported page_type for path resolution: {op.page_type!r}")
 
 
 def _cleanup_staging(transcript_path: Path, dry_run: bool) -> None:

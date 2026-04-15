@@ -121,6 +121,127 @@ def build_user_prompt(
     )
 
 
+_MERGE_SYSTEM_PROMPT = """\
+You are the ephemeris wiki merge engine. Given EXISTING wiki page content and
+NEW session content about the same topic, classify every fact/claim in NEW as
+one of three categories:
+
+- MERGE: a net-new fact not present in EXISTING — append to the page.
+- DUPLICATE: a fact already present in EXISTING verbatim or semantically.
+- CONFLICT: a fact that directly contradicts an existing claim in EXISTING.
+
+Respond with ONLY valid JSON, no markdown, no explanation:
+
+{
+  "additions": ["net-new fact 1", "net-new fact 2"],
+  "duplicates": ["repeated fact"],
+  "conflicts": [
+    {
+      "existing_claim": "exact or near-exact claim from EXISTING",
+      "new_claim": "contradicting claim from NEW"
+    }
+  ],
+  "affirmed_claim": ""
+}
+
+If a conflict block (> ⚠️ Conflict:) exists in EXISTING and the NEW content
+clearly affirms one side, set "affirmed_claim" to the affirmed text and return
+that conflict's claims under "conflicts" so the resolver can remove the block.
+
+Rules:
+- Treat semantically equivalent claims as DUPLICATE even if worded differently.
+- Treat factual contradictions (different values, opposite statements) as CONFLICT.
+- Do NOT include the citation — the host adds it.
+- Return empty arrays if no items in that category.
+"""
+
+
+def build_merge_prompt(existing: str, new: str, session_id: str) -> str:
+    """Build the user prompt for the merge_topic model call.
+
+    Args:
+        existing: Current wiki page content.
+        new: New session content to integrate.
+        session_id: New session identifier (for context only).
+
+    Returns:
+        Formatted user prompt string.
+    """
+    return (
+        f"Session ID: {session_id}\n\n"
+        f"## Existing Wiki Page Content\n\n{existing}\n\n"
+        f"## New Session Content\n\n{new}\n\n"
+        f"Classify every fact/claim from the new session content as MERGE, "
+        f"DUPLICATE, or CONFLICT relative to the existing page content."
+    )
+
+
+def parse_merge_response(raw: str, session_id: str, existing_session_id: str) -> "MergeResult":  # type: ignore[name-defined]  # noqa: F821
+    """Parse the model's merge response into a MergeResult.
+
+    Args:
+        raw: Raw JSON string from ModelClient.invoke() for the merge call.
+        session_id: New session identifier.
+        existing_session_id: Session that authored the existing content.
+
+    Returns:
+        MergeResult with additions, duplicates, and conflicts.
+
+    Raises:
+        ParseResponseError: If raw is not valid JSON or missing required keys.
+    """
+    from ephemeris.exceptions import ParseResponseError
+    from ephemeris.model import ConflictPair, MergeResult
+
+    raw = raw.strip()
+    if not raw:
+        raise ParseResponseError("Merge model returned empty response")
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ParseResponseError(f"Merge response is not valid JSON: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ParseResponseError(
+            f"Merge response: expected dict, got {type(data).__name__}"
+        )
+
+    additions = data.get("additions", [])
+    duplicates = data.get("duplicates", [])
+    conflicts_raw = data.get("conflicts", [])
+    affirmed_claim = data.get("affirmed_claim", "")
+
+    if not isinstance(additions, list):
+        additions = []
+    if not isinstance(duplicates, list):
+        duplicates = []
+    if not isinstance(conflicts_raw, list):
+        conflicts_raw = []
+
+    conflicts = []
+    for item in conflicts_raw:
+        if isinstance(item, dict):
+            existing_claim = str(item.get("existing_claim", ""))
+            new_claim = str(item.get("new_claim", ""))
+            if existing_claim and new_claim:
+                conflicts.append(
+                    ConflictPair(
+                        existing_claim=existing_claim,
+                        new_claim=new_claim,
+                        existing_session_id=existing_session_id,
+                        new_session_id=session_id,
+                    )
+                )
+
+    return MergeResult(
+        additions=[str(a) for a in additions if a],
+        duplicates=[str(d) for d in duplicates if d],
+        conflicts=conflicts,
+        affirmed_claim=str(affirmed_claim) if affirmed_claim else "",
+    )
+
+
 def parse_response(raw: str) -> list[PageOperation]:
     """Parse the model's JSON response into PageOperation objects.
 

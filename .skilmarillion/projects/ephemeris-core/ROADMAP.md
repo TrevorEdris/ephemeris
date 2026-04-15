@@ -2,21 +2,23 @@
 
 ## Current Status
 
-**Phase:** 0 — In Progress
-**Last Updated:** 2026-04-15
+**Phase:** 1 — Pending
+**Last Updated:** 2026-04-15 (PR #9 review fixes applied)
 **P0-B Completed:** 2026-04-15
 **P0-C Completed:** 2026-04-15
+**P0-D Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
 - [x] P0-B: Transcript Capture (feat/spec-002-transcript-capture)
+- [x] P0-C: Wiki Ingestion Engine (feat/spec-003-wiki-ingestion-engine)
+- [x] P0-D: Incremental Update + Contradiction Detection (feat/spec-004-incremental-update, PR #9 https://github.com/TrevorEdris/ephemeris/pull/9)
 
 ### In Progress
 *(none)*
 
 ### Pending
-- [x] P0-C: Wiki Ingestion Engine (feat/spec-003-wiki-ingestion-engine)
-- [ ] Phase 0: Silent Wiki (P0-D remaining)
+- [x] Phase 0: Silent Wiki — COMPLETE
 - [ ] Phase 1: Power-User Surface
 - [ ] Phase 2: Customization Layer
 
@@ -78,12 +80,12 @@ Build the silent loop first and prove it. No visible surface until background in
 - **Depends on:** P0-C
 - **Risk:** Merge logic is the hardest part of the LLM Wiki pattern; new information must integrate without duplicating or silently overwriting prior knowledge.
 - **Checklist:**
-  - [ ] Implement wiki page merge: new session information extends existing pages without duplication
-  - [ ] Implement contradiction detection: flag discrepancies between new and prior content in the relevant page
-  - [ ] Verify a second session updates pages rather than creating duplicates
-  - [ ] Verify contradictions are visible as flagged inline text in the affected page
-  - [ ] Verify a killed mid-run ingestion leaves prior wiki state intact (fault isolation)
-  - [ ] Verify a diagnostic log entry is produced on any ingestion failure
+  - [x] Implement wiki page merge: new session information extends existing pages without duplication
+  - [x] Implement contradiction detection: flag discrepancies between new and prior content in the relevant page
+  - [x] Verify a second session updates pages rather than creating duplicates
+  - [x] Verify contradictions are visible as flagged inline text in the affected page
+  - [x] Verify a killed mid-run ingestion leaves prior wiki state intact (fault isolation)
+  - [x] Verify a diagnostic log entry is produced on any ingestion failure
 
 **Deliverable:** *Install the plugin, run one session, and a local markdown wiki exists. Run a second session and the wiki grows — no setup, no commands, no configuration required.*
 
@@ -203,7 +205,7 @@ P0-A (scaffolding)
 | SPEC-001 | Plugin Scaffolding + Hook Registration | IMPLEMENTED | 0 | P0-A |
 | SPEC-002 | Transcript Capture | IMPLEMENTED | 0 | P0-B |
 | SPEC-003 | Wiki Ingestion Engine | IMPLEMENTED | 0 | P0-C |
-| SPEC-004 | Incremental Update + Contradiction Detection | DRAFT | 0 | P0-D |
+| SPEC-004 | Incremental Update + Contradiction Detection | APPROVED | 0 | P0-D |
 | SPEC-005 | Manual Ingest Trigger | DRAFT | 1 | P1-A |
 | SPEC-006 | Wiki Query | DRAFT | 1 | P1-B |
 | SPEC-007 | Capture Scope Configuration | DRAFT | 2 | P2-A |

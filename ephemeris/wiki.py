@@ -368,6 +368,95 @@ def _add_back_link(ref_path: Path, source_page: Path, wiki_root: Path) -> None:
             pass
 
 
+def build_new_page_content(
+    op: "PageOperation",
+    wiki_root: Path,
+    citation: str,
+) -> tuple[Path, str]:
+    """Compute the path and full content for a new (non-existing) page without writing.
+
+    Only valid for topic and entity pages without pre-existing content. Decision
+    pages are not supported and will raise WikiWriteError.
+
+    Returns:
+        (page_path, content) — caller is responsible for writing.
+
+    Raises:
+        WikiWriteError: For unsupported page types or invalid page names.
+    """
+    from ephemeris.exceptions import WikiWriteError
+
+    if op.page_type == "topic":
+        safe_name = _sanitize_page_name(op.page_name)
+        topics_dir = wiki_root / "topics"
+        topics_dir.mkdir(parents=True, exist_ok=True)
+        page_path = topics_dir / f"{safe_name}.md"
+        _assert_contained(page_path, wiki_root)
+        overview = op.content.get("overview", "")
+        details = op.content.get("details", "")
+        content = f"# {_title(safe_name)}\n\n"
+        if overview:
+            content += f"## Overview\n{overview}\n\n"
+        if details:
+            content += f"## Details\n{details}\n\n"
+        content += f"## Sessions\n{citation}\n"
+        return page_path, content
+
+    elif op.page_type == "entity":
+        safe_name = _sanitize_page_name(op.page_name)
+        entities_dir = wiki_root / "entities"
+        entities_dir.mkdir(parents=True, exist_ok=True)
+        page_path = entities_dir / f"{safe_name}.md"
+        _assert_contained(page_path, wiki_root)
+        role = op.content.get("role", "")
+        relationships: list[dict[str, str]] = op.content.get("relationships", [])
+        content = f"# {safe_name}\n\n"
+        if role:
+            content += f"## Role\n{role}\n\n"
+        if relationships:
+            content += "## Relationships\n"
+            for rel in relationships:
+                entity_name = rel.get("entity", "")
+                description = rel.get("description", "")
+                if entity_name:
+                    content += f"- [{entity_name}]({entity_name}.md) — {description}\n"
+            content += "\n"
+        content += f"## Sessions\n{citation}\n"
+        return page_path, content
+
+    else:
+        raise WikiWriteError(f"build_new_page_content unsupported for page_type: {op.page_type!r}")
+
+
+def _load_page(op: "PageOperation", wiki_root: Path) -> str | None:
+    """Return the existing page content for ``op``, or None if not found.
+
+    Only topic and entity pages are checked; decisions always append.
+
+    Args:
+        op: PageOperation to look up.
+        wiki_root: Root directory of the wiki.
+
+    Returns:
+        Page text as a string, or None if the page does not yet exist.
+    """
+    if op.page_type == "topic":
+        safe_name = _sanitize_page_name(op.page_name)
+        page_path = wiki_root / "topics" / f"{safe_name}.md"
+    elif op.page_type == "entity":
+        safe_name = _sanitize_page_name(op.page_name)
+        page_path = wiki_root / "entities" / f"{safe_name}.md"
+    else:
+        return None
+
+    if not page_path.exists():
+        return None
+    try:
+        return page_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def _title(kebab_name: str) -> str:
     """Convert a kebab-case page name to a human-readable title."""
     return kebab_name.replace("-", " ").title()

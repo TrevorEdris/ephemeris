@@ -3,7 +3,7 @@
 **Feature ID:** P0-D
 **Size:** FEATURE
 **Risk:** HIGH
-**Status:** DRAFT
+**Status:** IMPLEMENTED
 **Depends on:** P0-C (wiki ingestion engine)
 
 ## Problem Statement
