@@ -126,6 +126,23 @@ class ModelClient(Protocol):
         """
         ...
 
+    def answer_query(self, prompt: str) -> str:
+        """Answer a wiki query given a grounded prompt.
+
+        The prompt is pre-assembled by ``build_grounded_prompt`` and contains
+        the wiki excerpts, the grounding instruction, and the question.
+
+        Args:
+            prompt: Fully assembled grounded prompt string.
+
+        Returns:
+            Model's answer text.
+
+        Raises:
+            ModelClientError: If the invocation fails.
+        """
+        ...
+
 
 class AnthropicModelClient:
     """Production model client backed by the Anthropic SDK.
@@ -188,6 +205,37 @@ class AnthropicModelClient:
         except Exception as exc:
             raise ModelClientError(f"Anthropic API call failed: {exc}") from exc
 
+    def answer_query(self, prompt: str) -> str:
+        """Call the Anthropic API with a pre-assembled grounded query prompt.
+
+        Args:
+            prompt: Fully assembled grounded prompt from build_grounded_prompt.
+
+        Returns:
+            Model's answer text.
+
+        Raises:
+            ModelClientError: On API error or empty response.
+        """
+        from ephemeris.exceptions import ModelClientError
+
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=2048,
+                system=[
+                    {
+                        "type": "text",
+                        "text": "You are the ephemeris wiki query engine.",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text  # type: ignore[union-attr]
+        except Exception as exc:
+            raise ModelClientError(f"Anthropic query API call failed: {exc}") from exc
+
     def merge_topic(self, existing: str, new: str, session_id: str) -> "MergeResult":
         """Call the Anthropic API to merge new session content into existing page.
 
@@ -243,17 +291,22 @@ class FakeModelClient:
             operations list ``{"operations": []}``.
         merge_result: MergeResult to return from ``merge_topic``. Defaults to
             an empty MergeResult (no additions, no duplicates, no conflicts).
+        query_response: String or callable to return from ``answer_query``.
+            If callable, receives the prompt and returns a string. Defaults to
+            echoing the first 80 chars of the prompt.
     """
 
     def __init__(
         self,
         response: str = '{"operations": []}',
         merge_result: Optional[MergeResult] = None,
+        query_response: "str | None" = None,
     ) -> None:
         self._response = response
         self._merge_result = merge_result or MergeResult(
             additions=[], duplicates=[], conflicts=[]
         )
+        self._query_response = query_response
 
     def invoke(self, system_prompt: str, user_prompt: str) -> str:  # noqa: ARG002
         return self._response
@@ -262,3 +315,20 @@ class FakeModelClient:
         self, existing: str, new: str, session_id: str
     ) -> MergeResult:
         return self._merge_result
+
+    def answer_query(self, prompt: str) -> str:  # noqa: ARG002
+        """Return canned query response.
+
+        If ``query_response`` was provided at construction, return it.
+        Otherwise echo the first 80 characters of the prompt as a default.
+
+        Args:
+            prompt: grounded prompt string; used for echo fallback when
+                ``query_response`` is None.
+
+        Returns:
+            Canned response string.
+        """
+        if self._query_response is not None:
+            return self._query_response
+        return prompt[:80]

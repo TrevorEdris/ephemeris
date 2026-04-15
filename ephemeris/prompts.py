@@ -242,6 +242,19 @@ def parse_merge_response(raw: str, session_id: str, existing_session_id: str) ->
     )
 
 
+GROUNDING_INSTRUCTION: str = (
+    "Answer the question using only the wiki excerpts provided below. "
+    "If the excerpts do not contain enough information to answer the question, "
+    "respond with: 'I cannot answer this from the wiki.'"
+)
+"""Literal grounding instruction embedded in every wiki query prompt.
+
+Tests import this constant and compare it as a substring of the prompt string
+passed to the model, verifying AC-7 (grounding constraint is verifiable from
+the prompt string).
+"""
+
+
 def parse_response(raw: str) -> list[PageOperation]:
     """Parse the model's JSON response into PageOperation objects.
 
