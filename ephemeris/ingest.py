@@ -600,6 +600,37 @@ def main(argv: "list[str] | None" = None) -> None:
     )
     args = parser.parse_args(argv)
 
+    # --- Validate session_id before any filesystem operations (MINOR-2) ---
+    # Mirrors the _sanitize_page_name defense from SPEC-002 for user-controlled inputs.
+    if args.session_id is not None:
+        sid = args.session_id
+        _INVALID_SESSION_CHARS = frozenset("/\\\x00:")
+        if not sid:
+            print(
+                "ephemeris.ingest: invalid session ID — must not be empty",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if ".." in sid.split("/")[0] or ".." in sid:
+            print(
+                f"ephemeris.ingest: invalid session ID {sid!r} — path traversal not allowed",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if any(c in sid for c in _INVALID_SESSION_CHARS):
+            bad = next(c for c in sid if c in _INVALID_SESSION_CHARS)
+            print(
+                f"ephemeris.ingest: invalid session ID {sid!r} — unsafe character {bad!r}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if Path(sid).is_absolute():
+            print(
+                f"ephemeris.ingest: invalid session ID {sid!r} — absolute paths not allowed",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     staging_root = _resolve_env(
         "EPHEMERIS_STAGING_ROOT", "~/.claude/ephemeris/staging"
     )
