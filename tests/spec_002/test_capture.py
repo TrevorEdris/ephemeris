@@ -129,3 +129,62 @@ def test_capture_second_write_overwrites_first(tmp_path: Path) -> None:
 
     dest = staging_root / "pre-compact" / "over-001.jsonl"
     assert dest.read_bytes() == content_v2, "Expected second capture to win"
+
+
+# ---------------------------------------------------------------------------
+# Step 9 RED: Empty transcript error
+# ---------------------------------------------------------------------------
+
+
+def test_capture_empty_transcript_raises(tmp_path: Path) -> None:
+    """AC-5: Empty transcript file raises EmptyTranscriptError; no file written."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import CaptureError, EmptyTranscriptError
+
+    empty_file = tmp_path / "empty.jsonl"
+    empty_file.write_bytes(b"")
+
+    payload = {"session_id": "empty-001", "transcript_path": str(empty_file)}
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(EmptyTranscriptError) as exc_info:
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert isinstance(exc_info.value, CaptureError)
+    assert "empty-001" in str(exc_info.value)
+    assert "pre-compact" in str(exc_info.value)
+
+    # No file should be staged
+    dest = staging_root / "pre-compact" / "empty-001.jsonl"
+    assert not dest.exists(), "No staged file expected for empty transcript"
+
+
+def test_capture_missing_transcript_path_raises(tmp_path: Path) -> None:
+    """AC-5: Missing transcript_path key raises EmptyTranscriptError."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import EmptyTranscriptError
+
+    payload = {"session_id": "empty-002"}
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(EmptyTranscriptError) as exc_info:
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert "empty-002" in str(exc_info.value)
+
+
+def test_capture_nonexistent_transcript_path_raises(tmp_path: Path) -> None:
+    """AC-5: transcript_path pointing to nonexistent file raises EmptyTranscriptError."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import EmptyTranscriptError
+
+    payload = {
+        "session_id": "empty-003",
+        "transcript_path": str(tmp_path / "does_not_exist.jsonl"),
+    }
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(EmptyTranscriptError) as exc_info:
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert "empty-003" in str(exc_info.value)
