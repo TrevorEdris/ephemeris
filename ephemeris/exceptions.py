@@ -35,6 +35,13 @@ class WikiWriteError(IngestError):
     """Raised when a wiki page cannot be written to disk."""
 
 
+class TranscriptParseError(IngestError):
+    """Raised when every non-empty line in a transcript is malformed JSON.
+
+    Distinguishes a completely corrupt file from an empty one.
+    """
+
+
 class EmptyTranscriptError(CaptureError):
     """Raised when the transcript file is empty, missing, or not referenced.
 

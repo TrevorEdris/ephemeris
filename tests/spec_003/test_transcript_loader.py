@@ -20,17 +20,19 @@ def test_load_transcript_returns_messages(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    msgs = load_transcript(jsonl)
+    result = load_transcript(jsonl)
+    msgs = result.messages
     assert len(msgs) == 2
     assert msgs[0].role == "user"
     assert msgs[0].content == "hello"
     assert msgs[0].timestamp == "2026-04-15T10:00:00Z"
     assert msgs[1].role == "assistant"
     assert msgs[1].content == "hi there"
+    assert result.skipped_lines == 0
 
 
 def test_load_transcript_skips_malformed_lines(tmp_path: Path) -> None:
-    """Malformed JSONL lines are silently skipped."""
+    """Malformed JSONL lines are skipped; skipped count is correct."""
     from ephemeris.transcript import load_transcript
 
     jsonl = tmp_path / "t.jsonl"
@@ -41,17 +43,19 @@ def test_load_transcript_skips_malformed_lines(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    msgs = load_transcript(jsonl)
-    assert len(msgs) == 1
-    assert msgs[0].content == "valid"
+    result = load_transcript(jsonl)
+    assert len(result.messages) == 1
+    assert result.messages[0].content == "valid"
+    assert result.skipped_lines == 2
 
 
 def test_load_transcript_returns_empty_for_missing_file(tmp_path: Path) -> None:
-    """Missing file returns empty list instead of raising."""
+    """Missing file returns empty result instead of raising."""
     from ephemeris.transcript import load_transcript
 
-    msgs = load_transcript(tmp_path / "nonexistent.jsonl")
-    assert msgs == []
+    result = load_transcript(tmp_path / "nonexistent.jsonl")
+    assert result.messages == []
+    assert result.skipped_lines == 0
 
 
 def test_transcript_to_text_includes_user_and_assistant(tmp_path: Path) -> None:
@@ -91,7 +95,8 @@ def test_load_transcript_fixture_simple() -> None:
     """Load the simple fixture and verify expected message count."""
     from ephemeris.transcript import load_transcript
 
-    msgs = load_transcript(FIXTURES / "transcript_simple.jsonl")
+    result = load_transcript(FIXTURES / "transcript_simple.jsonl")
+    msgs = result.messages
     assert len(msgs) >= 4  # system + 3 user/assistant exchanges
     roles = {m.role for m in msgs}
     assert "user" in roles

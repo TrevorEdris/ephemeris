@@ -117,8 +117,15 @@ def ingest_one(
 
     # --- Stage 1: Parse transcript ---
     log.log(session_id, "parse", "ok", f"Loading transcript: {transcript_path}")
-    messages = load_transcript(transcript_path)
-    transcript_text = transcript_to_text(messages)
+    load_result = load_transcript(transcript_path)
+    if load_result.skipped_lines > 0:
+        log.log(
+            session_id,
+            "parse",
+            "warning",
+            f"skipped {load_result.skipped_lines} malformed line(s) in transcript",
+        )
+    transcript_text = transcript_to_text(load_result.messages)
 
     # --- Stage 2: Bootstrap schema ---
     log.log(session_id, "schema", "ok", "Bootstrapping wiki schema")

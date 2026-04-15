@@ -1,18 +1,22 @@
 """transcript.py — JSONL transcript loader for ephemeris.
 
-Loads a staged JSONL transcript file and returns a list of Message
-dataclasses. Parsing is lenient — malformed lines are skipped.
+Loads a staged JSONL transcript file and returns a TranscriptLoadResult
+containing parsed Messages and the count of skipped malformed lines.
+Parsing is lenient — malformed lines are skipped — but if every non-empty
+line fails to parse, TranscriptParseError is raised to prevent a corrupt
+file from being silently treated as empty.
 
 Public API:
-    Message             — dataclass(role, content, timestamp)
-    load_transcript(path: Path) -> list[Message]
+    Message               — dataclass(role, content, timestamp)
+    TranscriptLoadResult  — dataclass(messages, skipped_lines)
+    load_transcript(path: Path) -> TranscriptLoadResult
     transcript_to_text(messages: list[Message]) -> str
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -36,11 +40,29 @@ class Message:
     timestamp: str = ""
 
 
-def load_transcript(path: Path) -> list[Message]:
-    """Load a JSONL transcript file into a list of Messages.
+@dataclass
+class TranscriptLoadResult:
+    """Result of loading a JSONL transcript file.
+
+    Attributes:
+        messages: Parsed Message objects.
+        skipped_lines: Number of non-empty lines that failed to parse.
+    """
+
+    messages: list[Message] = field(default_factory=list)
+    skipped_lines: int = 0
+
+
+def load_transcript(path: Path) -> TranscriptLoadResult:
+    """Load a JSONL transcript file into a TranscriptLoadResult.
 
     Each line is parsed as a JSON object. Lines that are not valid JSON or
-    that do not have a recognizable shape are silently skipped.
+    that do not have a recognizable shape are skipped; the count is recorded
+    in ``TranscriptLoadResult.skipped_lines`` so callers can surface it.
+
+    If every non-empty line is malformed (zero valid messages, at least one
+    non-empty line), ``TranscriptParseError`` is raised. This prevents a
+    completely corrupt file from being treated as an empty transcript.
 
     Recognized shapes:
     - ``{"type": "<role>", "content": "<text>", ...}``
@@ -49,25 +71,36 @@ def load_transcript(path: Path) -> list[Message]:
         path: Path to the JSONL file. Must exist.
 
     Returns:
-        List of Message objects, possibly empty if the file has no parseable
-        lines or if no lines match the expected shape.
+        TranscriptLoadResult with parsed messages and skipped_lines count.
+
+    Raises:
+        TranscriptParseError: If the file has non-empty content but every
+                              line fails to parse.
     """
+    from ephemeris.exceptions import TranscriptParseError
+
     messages: list[Message] = []
+    skipped_lines = 0
+    non_empty_line_count = 0
+
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return messages
+        return TranscriptLoadResult()
 
     for line in raw.splitlines():
         line = line.strip()
         if not line:
             continue
+        non_empty_line_count += 1
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
+            skipped_lines += 1
             continue
 
         if not isinstance(obj, dict):
+            skipped_lines += 1
             continue
 
         role = obj.get("type", "unknown")
@@ -98,7 +131,13 @@ def load_transcript(path: Path) -> list[Message]:
 
         messages.append(Message(role=role, content=content, timestamp=timestamp))
 
-    return messages
+    # If the file had non-empty content but every line was malformed, raise.
+    if non_empty_line_count > 0 and not messages:
+        raise TranscriptParseError(
+            f"All {non_empty_line_count} non-empty line(s) in {path} failed to parse"
+        )
+
+    return TranscriptLoadResult(messages=messages, skipped_lines=skipped_lines)
 
 
 def transcript_to_text(messages: list[Message], max_bytes: int = _MAX_TEXT_BYTES) -> str:
