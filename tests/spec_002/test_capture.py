@@ -320,3 +320,44 @@ def test_capture_staging_unavailable_via_mock(tmp_path: Path) -> None:
             capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
 
     assert "denied" in str(exc_info.value).lower() or "staging" in str(exc_info.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# Step 18 RED: Same session_id via both hooks stored in separate paths
+# ---------------------------------------------------------------------------
+
+
+def test_capture_same_session_id_both_hooks_separate_paths(tmp_path: Path) -> None:
+    """AC-9: Same session_id via PreCompact + SessionEnd stored in separate subdirs."""
+    from ephemeris.capture import capture
+
+    content_pre = b'{"role":"user","content":"before compact"}\n'
+    content_end = b'{"role":"user","content":"after session"}\n'
+
+    pre_file = tmp_path / "pre.jsonl"
+    pre_file.write_bytes(content_pre)
+    end_file = tmp_path / "end.jsonl"
+    end_file.write_bytes(content_end)
+
+    staging_root = tmp_path / "staging"
+    session_id = "shared-001"
+
+    capture(
+        hook_type="pre-compact",
+        payload={"session_id": session_id, "transcript_path": str(pre_file)},
+        staging_root=staging_root,
+    )
+    capture(
+        hook_type="session-end",
+        payload={"session_id": session_id, "transcript_path": str(end_file)},
+        staging_root=staging_root,
+    )
+
+    pre_dest = staging_root / "pre-compact" / f"{session_id}.jsonl"
+    end_dest = staging_root / "session-end" / f"{session_id}.jsonl"
+
+    assert pre_dest.exists(), "Pre-compact staged file should exist"
+    assert end_dest.exists(), "Session-end staged file should exist"
+    assert pre_dest.read_bytes() == content_pre
+    assert end_dest.read_bytes() == content_end
+    assert pre_dest != end_dest, "Files must be at distinct paths"
