@@ -5,10 +5,14 @@ the wiki directory. Implements the discover → schema → prompt → model
 → parse → write → cleanup pipeline.
 
 Public API:
-    PageResult    — dataclass(success, session_id, pages_written, error)
-    IngestResult  — dataclass(results: list[PageResult])
+    PageResult       — dataclass(success, session_id, pages_written, error)
+    IngestResult     — dataclass(results: list[PageResult])
+    IngestSummary    — dataclass for CLI summary rendering
     ingest_one(transcript_path, wiki_root, model, log, session_id, session_date) -> PageResult
     ingest_all(staging_root, wiki_root, model, log) -> IngestResult
+    list_pending_sessions(staging_root) -> list[Path]
+    render_ingest_summary(summary: IngestSummary) -> str
+    main(args: list[str] | None) -> None
 
 CLI entry:
     python -m ephemeris.ingest                    # process all pending transcripts
@@ -70,6 +74,70 @@ class IngestResult:
     @property
     def failure_count(self) -> int:
         return sum(1 for r in self.results if not r.success)
+
+
+@dataclass
+class IngestSummary:
+    """Aggregated summary of a CLI ingest run.
+
+    Used by render_ingest_summary() to produce the structured summary block
+    printed at the end of every CLI invocation.
+
+    Attributes:
+        sessions_processed: Total sessions attempted (success + failure).
+        pages_created: Count of brand-new wiki pages written.
+        pages_updated: Count of existing pages that were updated.
+        contradictions: Count of conflict blocks injected across all sessions.
+        errors: Count of sessions that failed.
+        error_lines: Human-readable error lines for each failed session.
+    """
+
+    sessions_processed: int
+    pages_created: int
+    pages_updated: int
+    contradictions: int
+    errors: int
+    error_lines: list[str] = field(default_factory=list)
+
+
+def render_ingest_summary(summary: IngestSummary) -> str:
+    """Render a structured summary block from an IngestSummary.
+
+    Pure function — no I/O or side effects.
+
+    Args:
+        summary: Populated IngestSummary dataclass.
+
+    Returns:
+        Multi-line string with the summary block, ending in a newline.
+    """
+    lines = [
+        "=== Ingest Summary ===",
+        f"Sessions processed: {summary.sessions_processed}",
+        f"Pages created:      {summary.pages_created}",
+        f"Pages updated:      {summary.pages_updated}",
+        f"Contradictions:     {summary.contradictions}",
+        f"Errors:             {summary.errors}",
+    ]
+    for error_line in summary.error_lines:
+        lines.append(f"  ERROR: {error_line}")
+    return "\n".join(lines) + "\n"
+
+
+def list_pending_sessions(staging_root: Path) -> list[Path]:
+    """Return all pending (unprocessed) JSONL transcript paths under staging_root.
+
+    A pending transcript is any ``*.jsonl`` file found recursively under
+    staging_root. Files are returned sorted alphabetically by path for
+    deterministic ordering across runs.
+
+    Args:
+        staging_root: Root of the staging directory tree.
+
+    Returns:
+        Sorted list of Path objects pointing to JSONL transcript files.
+    """
+    return sorted(staging_root.rglob("*.jsonl"))
 
 
 def ingest_one(
@@ -462,8 +530,19 @@ def _write_error_marker(
         pass
 
 
-if __name__ == "__main__":
+def main(argv: "list[str] | None" = None) -> None:
+    """CLI entry point for ephemeris.ingest.
+
+    Processes all pending transcripts or a single targeted session, prints
+    per-session progress lines (AC-2) and a structured summary block (AC-1),
+    and exits non-zero if any session fails (AC-6).
+
+    Args:
+        argv: Argument list (default: sys.argv[1:]). Passed directly to
+              argparse so tests can call main() without subprocess overhead.
+    """
     import argparse
+    import datetime
     import sys
 
     def _resolve_env(var: str, default: str) -> Path:
@@ -484,7 +563,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Parse and plan without writing any files",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     staging_root = _resolve_env(
         "EPHEMERIS_STAGING_ROOT", "~/.claude/ephemeris/staging"
@@ -512,8 +591,10 @@ if __name__ == "__main__":
             print(f"ephemeris.ingest: {exc}", file=sys.stderr)
             sys.exit(1)
 
+    today = datetime.date.today().isoformat()
+
     if args.session_id:
-        # Find the specific session transcript
+        # --- Targeted single-session mode (AC-5) ---
         candidates = list(staging_root.rglob(f"{args.session_id}.jsonl"))
         if not candidates:
             print(
@@ -522,33 +603,99 @@ if __name__ == "__main__":
             )
             sys.exit(1)
         transcript_path = candidates[0]
-        import datetime
 
+        print(f"[1/1] Ingesting session {args.session_id}...", flush=True)
         result_one = ingest_one(
             transcript_path=transcript_path,
             wiki_root=wiki_root,
             model=model,
             log=logger,
             session_id=args.session_id,
-            session_date=datetime.date.today().isoformat(),
+            session_date=today,
             dry_run=args.dry_run,
         )
-        if not result_one.success:
+
+        if result_one.success:
+            pages_created = len(result_one.pages_written)
+            summary = IngestSummary(
+                sessions_processed=1,
+                pages_created=pages_created,
+                pages_updated=0,
+                contradictions=getattr(result_one, "contradictions", 0),
+                errors=0,
+                error_lines=[],
+            )
+            print(render_ingest_summary(summary), end="")
+        else:
+            summary = IngestSummary(
+                sessions_processed=1,
+                pages_created=0,
+                pages_updated=0,
+                contradictions=0,
+                errors=1,
+                error_lines=[f"{args.session_id}: {result_one.error}"],
+            )
+            print(render_ingest_summary(summary), end="")
             print(
                 f"ephemeris.ingest: failed — {result_one.error}", file=sys.stderr
             )
             sys.exit(1)
+
     else:
-        result_all = ingest_all(
-            staging_root=staging_root,
-            wiki_root=wiki_root,
-            model=model,
-            log=logger,
-            dry_run=args.dry_run,
-        )
-        if result_all.failure_count > 0:
-            print(
-                f"ephemeris.ingest: {result_all.failure_count} transcript(s) failed",
-                file=sys.stderr,
+        # --- Batch mode: all pending sessions ---
+        pending = list_pending_sessions(staging_root)
+
+        if not pending:
+            print("No pending sessions found.")
+            summary = IngestSummary(
+                sessions_processed=0,
+                pages_created=0,
+                pages_updated=0,
+                contradictions=0,
+                errors=0,
+                error_lines=[],
             )
+            print(render_ingest_summary(summary), end="")
+            return
+
+        total = len(pending)
+        pages_created_total = 0
+        pages_updated_total = 0
+        contradictions_total = 0
+        error_lines: list[str] = []
+
+        for i, transcript_path in enumerate(pending, start=1):
+            session_id = transcript_path.stem
+            print(f"[{i}/{total}] Ingesting session {session_id}...", flush=True)
+            result = ingest_one(
+                transcript_path=transcript_path,
+                wiki_root=wiki_root,
+                model=model,
+                log=logger,
+                session_id=session_id,
+                session_date=today,
+                dry_run=args.dry_run,
+            )
+            if result.success:
+                pages_created_total += len(result.pages_written)
+                contradictions_total += getattr(result, "contradictions", 0)
+            else:
+                error_lines.append(f"{session_id}: {result.error}")
+
+        errors_total = len(error_lines)
+        summary = IngestSummary(
+            sessions_processed=total,
+            pages_created=pages_created_total,
+            pages_updated=pages_updated_total,
+            contradictions=contradictions_total,
+            errors=errors_total,
+            error_lines=error_lines,
+        )
+        print(render_ingest_summary(summary), end="")
+
+        if errors_total > 0:
             sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
