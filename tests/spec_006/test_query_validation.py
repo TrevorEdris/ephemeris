@@ -203,3 +203,86 @@ class TestQueryNoMatchingPages:
         exit_code = main(["--wiki-root", str(tmp_path), "How do submarines work?"])
 
         assert exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# MAJOR: gate paths must never construct AnthropicModelClient
+# ---------------------------------------------------------------------------
+
+class TestGatePathsNoModelClient:
+    """Verify AnthropicModelClient is never constructed on gate-exit paths.
+
+    Uses monkeypatch-bomb: AnthropicModelClient.__init__ raises a distinctive
+    RuntimeError so any accidental construction fails the test loudly.
+    """
+
+    def _make_wiki(self, wiki_root: Path) -> None:
+        """Populate wiki with a page about elves (for no-match gate)."""
+        topics = wiki_root / "topics"
+        topics.mkdir(parents=True, exist_ok=True)
+        (topics / "elves.md").write_text(
+            "# Elves\n\nElves are immortal beings from Middle-earth.\n",
+            encoding="utf-8",
+        )
+
+    def test_main_empty_wiki_constructs_no_model_client(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        """Empty-wiki gate exits before AnthropicModelClient is ever constructed."""
+        import ephemeris.model as model_mod
+        from ephemeris.query import main
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError(
+                "AnthropicModelClient must not be constructed on gate paths"
+            )
+
+        monkeypatch.setattr(model_mod.AnthropicModelClient, "__init__", _boom)
+        monkeypatch.delenv("EPHEMERIS_MODEL_CLIENT", raising=False)
+
+        exit_code = main(["--wiki-root", str(tmp_path), "Where is Rivendell?"])
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        assert "wiki is empty" in captured.out.lower()
+
+    def test_main_no_match_constructs_no_model_client(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        """No-match gate exits before AnthropicModelClient is ever constructed."""
+        import ephemeris.model as model_mod
+        from ephemeris.query import main
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError(
+                "AnthropicModelClient must not be constructed on gate paths"
+            )
+
+        monkeypatch.setattr(model_mod.AnthropicModelClient, "__init__", _boom)
+        monkeypatch.delenv("EPHEMERIS_MODEL_CLIENT", raising=False)
+        self._make_wiki(tmp_path)
+
+        exit_code = main(["--wiki-root", str(tmp_path), "How do submarines work?"])
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        assert "cannot answer" in captured.out.lower()
+
+    def test_main_empty_question_constructs_no_model_client(
+        self, monkeypatch, tmp_path
+    ):
+        """Empty-question gate exits before AnthropicModelClient is ever constructed."""
+        import ephemeris.model as model_mod
+        from ephemeris.query import main
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError(
+                "AnthropicModelClient must not be constructed on gate paths"
+            )
+
+        monkeypatch.setattr(model_mod.AnthropicModelClient, "__init__", _boom)
+        monkeypatch.delenv("EPHEMERIS_MODEL_CLIENT", raising=False)
+
+        exit_code = main(["--wiki-root", str(tmp_path), ""])
+
+        assert exit_code != 0
