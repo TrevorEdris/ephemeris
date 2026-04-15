@@ -3,13 +3,14 @@
 ## Current Status
 
 **Phase:** 2 — In Progress
-**Last Updated:** 2026-04-15 (PR #12 — P2-A SPEC-007 implemented)
+**Last Updated:** 2026-04-15 (PR #13 — P2-B SPEC-008 implemented)
 **P0-B Completed:** 2026-04-15
 **P0-C Completed:** 2026-04-15
 **P0-D Completed:** 2026-04-15
 **P1-A Completed:** 2026-04-15
 **P1-B Completed:** 2026-04-15
 **P2-A Completed:** 2026-04-15
+**P2-B Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
@@ -19,6 +20,7 @@
 - [x] P1-A: Manual Ingest Trigger (feat/spec-005-manual-ingest-trigger, PR #10)
 - [x] P1-B: Wiki Query (feat/spec-006-wiki-query, PR #11)
 - [x] P2-A: Capture Scope Configuration (feat/spec-007-capture-scope-config, PR #12)
+- [x] P2-B: Custom Wiki Schema (feat/spec-008-custom-wiki-schema, PR #13)
 
 ### In Progress
 *(none)*
@@ -147,16 +149,16 @@ Build the silent loop first and prove it. No visible surface until background in
   - [x] Verify scope changes take effect on the next ingestion pass with no plugin restart
   - [x] Verify excluded content is not ingested into the wiki
 
-### P2-B: Custom Wiki Schema
+### P2-B: Custom Wiki Schema ✓ IMPLEMENTED
 
 - **What:** Users can provide a plain text or markdown schema file that overrides the default wiki structure, naming conventions, and page organization used during ingestion.
 - **Depends on:** P1-A, P1-B
 - **Risk:** A malformed user schema could break ingestion output quality; the default schema must always be a safe fallback.
 - **Checklist:**
-  - [ ] Define schema file format (plain text or markdown, human-editable)
-  - [ ] Apply user schema during ingestion in place of the default schema when present
-  - [ ] Verify default schema applies cleanly when no user schema file exists
-  - [ ] Verify switching from default to user schema does not corrupt or delete existing wiki content
+  - [x] Define schema file format (plain text or markdown, human-editable)
+  - [x] Apply user schema during ingestion in place of the default schema when present
+  - [x] Verify default schema applies cleanly when no user schema file exists
+  - [x] Verify switching from default to user schema does not corrupt or delete existing wiki content
 
 **Deliverable:** *Users who want control can configure exactly what gets captured and how the wiki is organized — without affecting the zero-config experience for users who don't.*
 
@@ -215,7 +217,7 @@ P0-A (scaffolding)
 | SPEC-005 | Manual Ingest Trigger | IMPLEMENTED | 1 | P1-A |
 | SPEC-006 | Wiki Query | IMPLEMENTED | 1 | P1-B |
 | SPEC-007 | Capture Scope Configuration | IMPLEMENTED | 2 | P2-A |
-| SPEC-008 | Custom Wiki Schema | DRAFT | 2 | P2-B |
+| SPEC-008 | Custom Wiki Schema | IMPLEMENTED | 2 | P2-B |
 
 ---
 
