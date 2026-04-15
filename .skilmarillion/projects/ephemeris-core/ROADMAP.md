@@ -23,7 +23,7 @@
 
 ### Pending
 - [x] Phase 0: Silent Wiki — COMPLETE
-- [ ] Phase 1: Power-User Surface
+- [x] Phase 1: Power-User Surface
 - [ ] Phase 2: Customization Layer
 
 ---

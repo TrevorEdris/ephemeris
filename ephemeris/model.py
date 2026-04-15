@@ -323,7 +323,8 @@ class FakeModelClient:
         Otherwise echo the first 80 characters of the prompt as a default.
 
         Args:
-            prompt: Grounded prompt string (ignored if canned response set).
+            prompt: grounded prompt string; used for echo fallback when
+                ``query_response`` is None.
 
         Returns:
             Canned response string.
