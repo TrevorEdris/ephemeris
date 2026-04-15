@@ -1,0 +1,394 @@
+"""ingest.py — Wiki ingestion pipeline for ephemeris.
+
+Processes staged JSONL transcripts and writes structured knowledge to
+the wiki directory. Implements the discover → schema → prompt → model
+→ parse → write → cleanup pipeline.
+
+Public API:
+    PageResult    — dataclass(success, session_id, pages_written, error)
+    IngestResult  — dataclass(results: list[PageResult])
+    ingest_one(transcript_path, wiki_root, model, log, session_id, session_date) -> PageResult
+    ingest_all(staging_root, wiki_root, model, log) -> IngestResult
+
+CLI entry:
+    python -m ephemeris.ingest                    # process all pending transcripts
+    python -m ephemeris.ingest <session-id>       # process one specific session
+    python -m ephemeris.ingest --dry-run          # parse + plan without writing
+
+Environment overrides:
+    EPHEMERIS_STAGING_ROOT  — staging root (default: ~/.claude/ephemeris/staging)
+    EPHEMERIS_WIKI_ROOT     — wiki root (default: ~/.claude/ephemeris/wiki)
+    EPHEMERIS_LOG_PATH      — diagnostic log (default: ~/.claude/ephemeris/ephemeris.log)
+    EPHEMERIS_MODEL_CLIENT  — 'anthropic' or 'fake' (default: 'anthropic')
+    ANTHROPIC_API_KEY       — required for AnthropicModelClient
+"""
+
+from __future__ import annotations
+
+import os
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from ephemeris.log import IngestLogger
+    from ephemeris.model import ModelClient
+
+
+@dataclass
+class PageResult:
+    """Result of processing a single transcript.
+
+    Attributes:
+        success: True if the transcript was fully processed without error.
+        session_id: The session identifier.
+        pages_written: List of paths to pages that were written or updated.
+        error: Error message if success is False; otherwise empty string.
+    """
+
+    success: bool
+    session_id: str
+    pages_written: list[Path] = field(default_factory=list)
+    error: str = ""
+
+
+@dataclass
+class IngestResult:
+    """Result of a bulk ingestion run.
+
+    Attributes:
+        results: One PageResult per processed transcript.
+    """
+
+    results: list[PageResult] = field(default_factory=list)
+
+    @property
+    def success_count(self) -> int:
+        return sum(1 for r in self.results if r.success)
+
+    @property
+    def failure_count(self) -> int:
+        return sum(1 for r in self.results if not r.success)
+
+
+def ingest_one(
+    transcript_path: Path,
+    wiki_root: Path,
+    model: "ModelClient",
+    log: "IngestLogger",
+    session_id: str,
+    session_date: str,
+    dry_run: bool = False,
+) -> PageResult:
+    """Process a single staged transcript through the ingestion pipeline.
+
+    Pipeline stages:
+    1. Parse JSONL transcript → plain text
+    2. Bootstrap wiki schema if absent
+    3. Build system + user prompts
+    4. Invoke model
+    5. Parse model response → PageOperation list
+    6. Write wiki pages (unless dry_run)
+    7. Delete staging file on success; write .error marker on failure
+
+    Args:
+        transcript_path: Path to the JSONL transcript file.
+        wiki_root: Wiki root directory.
+        model: Model client to invoke.
+        log: Diagnostic logger.
+        session_id: Session identifier (used in citations and log entries).
+        session_date: Session date in YYYY-MM-DD format.
+        dry_run: If True, skip all file writes and staging cleanup.
+
+    Returns:
+        PageResult with success=True and pages written, or success=False
+        with an error message.
+    """
+    from ephemeris.exceptions import ParseResponseError
+    from ephemeris.log import IngestLogger
+    from ephemeris.prompts import build_system_prompt, build_user_prompt, parse_response
+    from ephemeris.schema import bootstrap_schema
+    from ephemeris.transcript import load_transcript, transcript_to_text
+    from ephemeris.wiki import add_cross_references, write_page
+
+    start_ts = time.monotonic()
+    citation = f"> Source: [{session_date} {session_id}]"
+
+    # --- Stage 1: Parse transcript ---
+    log.log(session_id, "parse", "ok", f"Loading transcript: {transcript_path}")
+    messages = load_transcript(transcript_path)
+    transcript_text = transcript_to_text(messages)
+
+    # --- Stage 2: Bootstrap schema ---
+    log.log(session_id, "schema", "ok", "Bootstrapping wiki schema")
+    if not dry_run:
+        bootstrap_schema(wiki_root)
+    schema_path = wiki_root / "SCHEMA.md"
+    schema_text = (
+        schema_path.read_text(encoding="utf-8")
+        if schema_path.exists()
+        else ""
+    )
+
+    # --- Stage 3: Build prompts ---
+    log.log(session_id, "prompt", "ok", "Building ingestion prompt")
+    system_prompt = build_system_prompt(schema_text)
+    user_prompt = build_user_prompt(transcript_text, session_id, session_date)
+
+    # --- Stage 4: Invoke model ---
+    log.log(session_id, "model", "ok", "Invoking model")
+    model_start = time.monotonic()
+    try:
+        raw_response = model.invoke(system_prompt, user_prompt)
+    except Exception as exc:
+        elapsed = int((time.monotonic() - start_ts) * 1000)
+        log.log(session_id, "model", "error", f"Model invocation failed: {exc}", elapsed)
+        _write_error_marker(transcript_path, str(exc), dry_run)
+        return PageResult(success=False, session_id=session_id, error=str(exc))
+    model_elapsed = int((time.monotonic() - model_start) * 1000)
+    log.log(session_id, "model", "ok", "Model response received", model_elapsed)
+
+    # --- Stage 5: Parse response ---
+    log.log(session_id, "parse_response", "ok", "Parsing model response")
+    try:
+        operations = parse_response(raw_response)
+    except ParseResponseError as exc:
+        elapsed = int((time.monotonic() - start_ts) * 1000)
+        log.log(session_id, "parse_response", "error", f"Parse failed: {exc}", elapsed)
+        _write_error_marker(transcript_path, str(exc), dry_run)
+        return PageResult(success=False, session_id=session_id, error=str(exc))
+
+    if not operations:
+        # No extractable knowledge — still a success
+        log.log(session_id, "write", "ok", "No operations extracted; nothing to write")
+        _cleanup_staging(transcript_path, dry_run)
+        elapsed = int((time.monotonic() - start_ts) * 1000)
+        log.log(session_id, "complete", "ok", "Ingestion complete (no operations)", elapsed)
+        return PageResult(success=True, session_id=session_id)
+
+    # --- Stage 6: Write wiki pages ---
+    if dry_run:
+        log.log(session_id, "write", "ok", f"dry-run: would write {len(operations)} page(s)")
+        return PageResult(success=True, session_id=session_id)
+
+    pages_written: list[Path] = []
+    # Build page_type_map for cross-reference resolution
+    page_type_map: dict[str, str] = {op.page_name: op.page_type for op in operations}
+
+    for op in operations:
+        log.log(session_id, "write", "ok", f"Writing {op.page_type} page: {op.page_name!r}")
+        try:
+            from ephemeris.exceptions import WikiWriteError
+
+            page_path = write_page(op, wiki_root, citation)
+            pages_written.append(page_path)
+        except Exception as exc:
+            elapsed = int((time.monotonic() - start_ts) * 1000)
+            log.log(session_id, "write", "error", f"Failed to write {op.page_name!r}: {exc}", elapsed)
+            # Failure on any page write aborts the whole run to prevent partial writes
+            _write_error_marker(transcript_path, str(exc), dry_run)
+            return PageResult(
+                success=False,
+                session_id=session_id,
+                pages_written=pages_written,
+                error=str(exc),
+            )
+
+    # --- Cross-reference pass ---
+    for op, page_path in zip(operations, pages_written):
+        if op.cross_references and op.page_type != "decision":
+            add_cross_references(wiki_root, page_path, op.cross_references, page_type_map)
+
+    # --- Stage 7: Cleanup staging ---
+    log.log(session_id, "cleanup", "ok", "Removing staged transcript")
+    _cleanup_staging(transcript_path, dry_run)
+
+    elapsed = int((time.monotonic() - start_ts) * 1000)
+    log.log(
+        session_id,
+        "complete",
+        "ok",
+        f"Ingestion complete: {len(pages_written)} page(s) written",
+        elapsed,
+    )
+    return PageResult(
+        success=True,
+        session_id=session_id,
+        pages_written=pages_written,
+    )
+
+
+def ingest_all(
+    staging_root: Path,
+    wiki_root: Path,
+    model: "ModelClient",
+    log: "IngestLogger",
+    dry_run: bool = False,
+) -> IngestResult:
+    """Process all pending transcripts in the staging root.
+
+    Scans all ``<staging_root>/<hook_type>/<session_id>.jsonl`` files.
+    Each transcript is processed independently — failure of one does not
+    prevent processing of others.
+
+    Args:
+        staging_root: Root of the staging directory tree.
+        wiki_root: Wiki root directory.
+        model: Model client to invoke.
+        log: Diagnostic logger.
+        dry_run: If True, no files are written or deleted.
+
+    Returns:
+        IngestResult aggregating all PageResults.
+    """
+    import datetime
+
+    result = IngestResult()
+
+    # Find all *.jsonl files under staging_root (skip *.error files)
+    transcript_paths = sorted(staging_root.rglob("*.jsonl"))
+
+    if not transcript_paths:
+        log.log("batch", "complete", "ok", "No pending transcripts found")
+        return result
+
+    today = datetime.date.today().isoformat()
+
+    for transcript_path in transcript_paths:
+        session_id = transcript_path.stem
+        page_result = ingest_one(
+            transcript_path=transcript_path,
+            wiki_root=wiki_root,
+            model=model,
+            log=log,
+            session_id=session_id,
+            session_date=today,
+            dry_run=dry_run,
+        )
+        result.results.append(page_result)
+
+    return result
+
+
+def _cleanup_staging(transcript_path: Path, dry_run: bool) -> None:
+    """Delete the staging file on success (per D8)."""
+    if dry_run:
+        return
+    try:
+        transcript_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _write_error_marker(
+    transcript_path: Path,
+    error_message: str,
+    dry_run: bool,
+) -> None:
+    """Write a .error sibling file for failed transcripts (per D8)."""
+    if dry_run:
+        return
+    import datetime
+
+    error_path = transcript_path.with_suffix(".error")
+    try:
+        timestamp = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+        error_path.write_text(
+            f"{timestamp}\n{error_message}\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    def _resolve_env(var: str, default: str) -> Path:
+        val = os.environ.get(var, default)
+        return Path(val).expanduser()
+
+    parser = argparse.ArgumentParser(
+        description="ephemeris wiki ingestion engine",
+        prog="python -m ephemeris.ingest",
+    )
+    parser.add_argument(
+        "session_id",
+        nargs="?",
+        help="Process a specific session ID only",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and plan without writing any files",
+    )
+    args = parser.parse_args()
+
+    staging_root = _resolve_env(
+        "EPHEMERIS_STAGING_ROOT", "~/.claude/ephemeris/staging"
+    )
+    wiki_root = _resolve_env("EPHEMERIS_WIKI_ROOT", "~/.claude/ephemeris/wiki")
+    log_path = _resolve_env("EPHEMERIS_LOG_PATH", "~/.claude/ephemeris/ephemeris.log")
+    model_client_type = os.environ.get("EPHEMERIS_MODEL_CLIENT", "anthropic")
+
+    from ephemeris.log import IngestLogger
+
+    logger = IngestLogger(log_path)
+
+    # Build model client
+    if model_client_type == "fake":
+        from ephemeris.model import FakeModelClient
+
+        model: "ModelClient" = FakeModelClient()
+    else:
+        try:
+            from ephemeris.model import AnthropicModelClient
+
+            model = AnthropicModelClient()
+        except Exception as exc:
+            logger.log("cli", "model", "error", f"Cannot create model client: {exc}")
+            print(f"ephemeris.ingest: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    if args.session_id:
+        # Find the specific session transcript
+        candidates = list(staging_root.rglob(f"{args.session_id}.jsonl"))
+        if not candidates:
+            print(
+                f"ephemeris.ingest: no staged transcript found for session {args.session_id!r}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        transcript_path = candidates[0]
+        import datetime
+
+        result_one = ingest_one(
+            transcript_path=transcript_path,
+            wiki_root=wiki_root,
+            model=model,
+            log=logger,
+            session_id=args.session_id,
+            session_date=datetime.date.today().isoformat(),
+            dry_run=args.dry_run,
+        )
+        if not result_one.success:
+            print(
+                f"ephemeris.ingest: failed — {result_one.error}", file=sys.stderr
+            )
+            sys.exit(1)
+    else:
+        result_all = ingest_all(
+            staging_root=staging_root,
+            wiki_root=wiki_root,
+            model=model,
+            log=logger,
+            dry_run=args.dry_run,
+        )
+        if result_all.failure_count > 0:
+            print(
+                f"ephemeris.ingest: {result_all.failure_count} transcript(s) failed",
+                file=sys.stderr,
+            )
+            sys.exit(1)

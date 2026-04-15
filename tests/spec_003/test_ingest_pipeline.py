@@ -2,11 +2,13 @@
 
 Tests AC-2.1 through AC-2.6 of SPEC-003.
 All tests use FakeModelClient — Anthropic SDK is never imported.
+Tests always copy fixtures to tmp_path so ingest_one may safely delete them.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -33,6 +35,15 @@ def _single_topic_op() -> dict:  # type: ignore[type-arg]
     }
 
 
+def _copy_fixture(name: str, tmp_path: Path, session_id: str) -> Path:
+    """Copy a fixture JSONL to a tmp_path staging dir, return the staged path."""
+    staging = tmp_path / "staging" / "session-end"
+    staging.mkdir(parents=True, exist_ok=True)
+    dest = staging / f"{session_id}.jsonl"
+    shutil.copy(FIXTURES / name, dest)
+    return dest
+
+
 def test_ingest_processes_staged_transcript(tmp_path: Path) -> None:
     """AC-2.2: ingest_one creates at least one wiki page from a staged transcript."""
     from ephemeris.ingest import ingest_one
@@ -43,16 +54,17 @@ def test_ingest_processes_staged_transcript(tmp_path: Path) -> None:
     wiki_root.mkdir()
     log_path = tmp_path / "ephemeris.log"
     logger = IngestLogger(log_path)
+    session_id = "test-session-001"
+    transcript_path = _copy_fixture("transcript_simple.jsonl", tmp_path, session_id)
 
     model = FakeModelClient(response=_make_fake_response([_single_topic_op()]))
-    transcript_path = FIXTURES / "transcript_simple.jsonl"
 
     result = ingest_one(
         transcript_path=transcript_path,
         wiki_root=wiki_root,
         model=model,
         log=logger,
-        session_id="test-session-001",
+        session_id=session_id,
         session_date="2026-04-15",
     )
 
@@ -71,16 +83,17 @@ def test_ingest_no_external_calls(tmp_path: Path) -> None:
     wiki_root.mkdir()
     log_path = tmp_path / "ephemeris.log"
     logger = IngestLogger(log_path)
+    session_id = "test-session-002"
+    transcript_path = _copy_fixture("transcript_simple.jsonl", tmp_path, session_id)
 
     model = FakeModelClient(response=_make_fake_response([_single_topic_op()]))
-    transcript_path = FIXTURES / "transcript_simple.jsonl"
 
     ingest_one(
         transcript_path=transcript_path,
         wiki_root=wiki_root,
         model=model,
         log=logger,
-        session_id="test-session-002",
+        session_id=session_id,
         session_date="2026-04-15",
     )
 
@@ -100,11 +113,11 @@ def test_ingest_adds_citation_to_pages(tmp_path: Path) -> None:
     wiki_root.mkdir()
     log_path = tmp_path / "ephemeris.log"
     logger = IngestLogger(log_path)
-
     session_id = "cite-session-003"
     session_date = "2026-04-15"
+    transcript_path = _copy_fixture("transcript_simple.jsonl", tmp_path, session_id)
+
     model = FakeModelClient(response=_make_fake_response([_single_topic_op()]))
-    transcript_path = FIXTURES / "transcript_simple.jsonl"
 
     ingest_one(
         transcript_path=transcript_path,
@@ -133,17 +146,18 @@ def test_ingest_empty_transcript_no_pages(tmp_path: Path) -> None:
     wiki_root.mkdir()
     log_path = tmp_path / "ephemeris.log"
     logger = IngestLogger(log_path)
+    session_id = "empty-session-004"
+    transcript_path = _copy_fixture("transcript_empty.jsonl", tmp_path, session_id)
 
     # Model returns no operations for trivial transcript
     model = FakeModelClient(response=_make_fake_response([]))
-    transcript_path = FIXTURES / "transcript_empty.jsonl"
 
     result = ingest_one(
         transcript_path=transcript_path,
         wiki_root=wiki_root,
         model=model,
         log=logger,
-        session_id="empty-session-004",
+        session_id=session_id,
         session_date="2026-04-15",
     )
 
@@ -167,17 +181,18 @@ def test_ingest_malformed_response_no_partial_write(tmp_path: Path) -> None:
     wiki_root.mkdir()
     log_path = tmp_path / "ephemeris.log"
     logger = IngestLogger(log_path)
+    session_id = "malformed-session-005"
+    transcript_path = _copy_fixture("transcript_simple.jsonl", tmp_path, session_id)
 
     # Return invalid JSON
     model = FakeModelClient(response="THIS IS NOT VALID JSON {{{{")
-    transcript_path = FIXTURES / "transcript_simple.jsonl"
 
     result = ingest_one(
         transcript_path=transcript_path,
         wiki_root=wiki_root,
         model=model,
         log=logger,
-        session_id="malformed-session-005",
+        session_id=session_id,
         session_date="2026-04-15",
     )
 
@@ -188,23 +203,16 @@ def test_ingest_malformed_response_no_partial_write(tmp_path: Path) -> None:
 
 def test_ingest_consumes_transcript_on_success(tmp_path: Path) -> None:
     """AC-2.6: Staging file is deleted after successful ingestion."""
-    import shutil
-
     from ephemeris.ingest import ingest_one
     from ephemeris.log import IngestLogger
     from ephemeris.model import FakeModelClient
 
     wiki_root = tmp_path / "wiki"
     wiki_root.mkdir()
-    staging_dir = tmp_path / "staging" / "session-end"
-    staging_dir.mkdir(parents=True)
     log_path = tmp_path / "ephemeris.log"
     logger = IngestLogger(log_path)
-
-    # Copy fixture to staging
     session_id = "consume-session-006"
-    staged_path = staging_dir / f"{session_id}.jsonl"
-    shutil.copy(FIXTURES / "transcript_simple.jsonl", staged_path)
+    staged_path = _copy_fixture("transcript_simple.jsonl", tmp_path, session_id)
 
     model = FakeModelClient(response=_make_fake_response([_single_topic_op()]))
 

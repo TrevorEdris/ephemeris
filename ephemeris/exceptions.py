@@ -1,14 +1,38 @@
 """exceptions.py — ephemeris domain exception hierarchy.
 
-All public exceptions inherit from CaptureError, which itself inherits from
-Exception so callers can catch at either granularity.
+All capture exceptions inherit from CaptureError.
+All ingestion exceptions inherit from IngestError.
+Both inherit from EphemerisError for broad catches.
 """
 
 from __future__ import annotations
 
 
-class CaptureError(Exception):
+class EphemerisError(Exception):
+    """Base class for all ephemeris errors."""
+
+
+class CaptureError(EphemerisError):
     """Base class for all ephemeris capture errors."""
+
+
+class IngestError(EphemerisError):
+    """Base class for all ephemeris ingestion errors."""
+
+
+class ModelClientError(IngestError):
+    """Raised when the model client cannot be initialized or invoked.
+
+    Typical causes: ANTHROPIC_API_KEY not set, API error, timeout.
+    """
+
+
+class ParseResponseError(IngestError):
+    """Raised when the model response cannot be parsed into page operations."""
+
+
+class WikiWriteError(IngestError):
+    """Raised when a wiki page cannot be written to disk."""
 
 
 class EmptyTranscriptError(CaptureError):
