@@ -211,19 +211,9 @@ def ingest_one(
             # --- SPEC-004 Slice 2 & 3: Merge with existing page if present ---
             existing_content = _load_page(op, wiki_root)
             if existing_content is not None and op.page_type in ("topic", "entity"):
-                # Build new content string from the operation for merge comparison
-                new_content_parts = []
-                if op.page_type == "topic":
-                    if op.content.get("overview"):
-                        new_content_parts.append(op.content["overview"])
-                    if op.content.get("details"):
-                        new_content_parts.append(op.content["details"])
-                elif op.page_type == "entity":
-                    if op.content.get("role"):
-                        new_content_parts.append(op.content["role"])
-                new_content_str = "\n".join(new_content_parts)
+                new_content_str = _op_new_content_str(op)
 
-                # Call merge_topic — returns MergeResult
+                # Call merge_topic — returns MergeResult (Slice 2)
                 log.log(session_id, "merge", "ok", f"Merging into existing page: {op.page_name!r}")
                 try:
                     merge_result = model.merge_topic(existing_content, new_content_str, session_id)
@@ -239,7 +229,7 @@ def ingest_one(
                         error=str(merge_exc),
                     )
 
-                # Build merged content from existing + additions + conflicts + resolution
+                # Apply net-new additions (AC-2.3)
                 merged = apply_merge_additions(existing_content, merge_result.additions)
 
                 # Detect + inject conflict blocks (Slice 3 AC-3.1)
@@ -250,7 +240,7 @@ def ingest_one(
                 else:
                     log.log(session_id, "detect", "ok", f"No conflicts in {op.page_name!r}")
 
-                # Resolve existing conflict block if model affirmed one side (AC-3.4)
+                # Resolve existing conflict block if affirmed (AC-3.4)
                 if merge_result.affirmed_claim:
                     merged = resolve_conflict_block(merged, merge_result.affirmed_claim)
 
@@ -260,17 +250,11 @@ def ingest_one(
                 else:
                     merged = merged.rstrip() + f"\n\n## Sessions\n{citation}\n"
 
-                # Write merged content (always, so citation is recorded)
-                from ephemeris.wiki import _sanitize_page_name
-                safe_name = _sanitize_page_name(op.page_name)
-                if op.page_type == "topic":
-                    page_path = wiki_root / "topics" / f"{safe_name}.md"
-                else:
-                    page_path = wiki_root / "entities" / f"{safe_name}.md"
+                page_path = _page_path_for_op(op, wiki_root)
                 _atomic_write_text(page_path, merged)
                 pages_written.append(page_path)
             else:
-                # New page — create as before (AC-2.4)
+                # New page or decision — create as SPEC-003 (AC-2.4)
                 log.log(session_id, "merge", "ok", f"No existing page; creating: {op.page_name!r}")
                 log.log(session_id, "detect", "ok", f"New page, no conflict check: {op.page_name!r}")
                 page_path = write_page(op, wiki_root, citation)
@@ -365,6 +349,40 @@ def ingest_all(
         result.results.append(page_result)
 
     return result
+
+
+def _op_new_content_str(op: "PageOperation") -> str:  # type: ignore[name-defined]  # noqa: F821
+    """Extract a plain-text summary of new content from a PageOperation.
+
+    Used as the ``new`` argument to ``model.merge_topic`` so the model can
+    compare it against existing page content.
+    """
+    parts: list[str] = []
+    if op.page_type == "topic":
+        if op.content.get("overview"):
+            parts.append(op.content["overview"])
+        if op.content.get("details"):
+            parts.append(op.content["details"])
+    elif op.page_type == "entity":
+        if op.content.get("role"):
+            parts.append(op.content["role"])
+    return "\n".join(parts)
+
+
+def _page_path_for_op(op: "PageOperation", wiki_root: Path) -> Path:  # type: ignore[name-defined]  # noqa: F821
+    """Return the target wiki file path for a topic or entity operation.
+
+    Raises:
+        ValueError: If op.page_type is not 'topic' or 'entity'.
+    """
+    from ephemeris.wiki import _sanitize_page_name
+
+    safe_name = _sanitize_page_name(op.page_name)
+    if op.page_type == "topic":
+        return wiki_root / "topics" / f"{safe_name}.md"
+    elif op.page_type == "entity":
+        return wiki_root / "entities" / f"{safe_name}.md"
+    raise ValueError(f"Unsupported page_type for path resolution: {op.page_type!r}")
 
 
 def _cleanup_staging(transcript_path: Path, dry_run: bool) -> None:
