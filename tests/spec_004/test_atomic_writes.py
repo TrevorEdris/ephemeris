@@ -117,6 +117,74 @@ def test_pre_run_pages_unchanged_after_mid_run_fault(tmp_path: Path, monkeypatch
 
 
 # ---------------------------------------------------------------------------
+# AC-1.2: no partial page after merge-path write error
+# ---------------------------------------------------------------------------
+
+def test_no_partial_page_after_merge_path_write_error(tmp_path: Path, monkeypatch) -> None:
+    """AC-1.2: After a fault on the 2nd page write in a multi-page run:
+      (a) no .tmp files remain anywhere in wiki_root
+      (b) the 2nd page does not exist with any (partial) content
+      (c) the 1st page (pre-existing write target) was rolled back to pre-run state
+    """
+    import ephemeris.wiki as wiki_mod
+    from ephemeris.log import IngestLogger
+    from ephemeris.model import FakeModelClient
+
+    wiki_root = tmp_path / "wiki"
+    topics_dir = wiki_root / "topics"
+    topics_dir.mkdir(parents=True)
+
+    # Pre-create both pages that the ingest will overwrite
+    p1 = topics_dir / "topic-alpha.md"
+    p2 = topics_dir / "topic-beta.md"
+    p1.write_text("# Topic Alpha\n\nOriginal content.\n", encoding="utf-8")
+    p2.write_text("# Topic Beta\n\nOriginal content.\n", encoding="utf-8")
+    original_p1 = p1.read_bytes()
+    original_p2 = p2.read_bytes()
+
+    log_path = tmp_path / "ingest.log"
+    transcript = _make_transcript(tmp_path, "sess-ac12", "talk about alpha and beta")
+
+    call_count = {"n": 0}
+    original_atomic = wiki_mod._atomic_write_text
+
+    def fault_on_second(path, content):
+        call_count["n"] += 1
+        if call_count["n"] >= 2:
+            raise OSError("Injected fault on 2nd write")
+        return original_atomic(path, content)
+
+    monkeypatch.setattr(wiki_mod, "_atomic_write_text", fault_on_second)
+
+    from ephemeris.ingest import ingest_one
+
+    result = ingest_one(
+        transcript_path=transcript,
+        wiki_root=wiki_root,
+        model=FakeModelClient(response=_fake_response_two_topics()),
+        log=IngestLogger(log_path),
+        session_id="sess-ac12",
+        session_date="2026-04-15",
+    )
+
+    assert not result.success
+
+    # (a) No .tmp files anywhere in wiki_root
+    tmp_files = list(wiki_root.rglob("*.tmp"))
+    assert tmp_files == [], f"Stale .tmp files found: {tmp_files}"
+
+    # (b) page 2 rolled back to pre-run state (not partial new content)
+    assert p2.read_bytes() == original_p2, (
+        "Page 2 was not rolled back to pre-run content"
+    )
+
+    # (c) page 1 rolled back to pre-run state
+    assert p1.read_bytes() == original_p1, (
+        "Page 1 was not rolled back to pre-run content"
+    )
+
+
+# ---------------------------------------------------------------------------
 # AC-1.3: log entry on write fault
 # ---------------------------------------------------------------------------
 
