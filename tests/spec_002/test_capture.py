@@ -236,3 +236,34 @@ def test_capture_empty_session_id_raises_invalid_payload(tmp_path: Path) -> None
 
     with pytest.raises(InvalidPayloadError):
         capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+
+# ---------------------------------------------------------------------------
+# Step 14 RED: 1 MB transcript captured without truncation
+# ---------------------------------------------------------------------------
+
+
+def test_capture_large_transcript_no_truncation(tmp_path: Path) -> None:
+    """AC-7: ~1 MB transcript captured byte-for-byte, no truncation."""
+    from ephemeris.capture import capture
+
+    # Generate ~1 MB of JSONL content (10000 lines)
+    lines = []
+    for i in range(10000):
+        lines.append(json.dumps({"role": "user", "content": f"message number {i:05d} with padding " + "x" * 80}))
+    jsonl_content = ("\n".join(lines) + "\n").encode()
+    assert len(jsonl_content) > 1_000_000, "Expected at least 1 MB of test data"
+
+    transcript_file = tmp_path / "big_transcript.jsonl"
+    transcript_file.write_bytes(jsonl_content)
+
+    payload = {"session_id": "big-001", "transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+
+    capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    dest = staging_root / "pre-compact" / "big-001.jsonl"
+    captured_bytes = dest.read_bytes()
+    assert len(captured_bytes) == len(jsonl_content), (
+        f"Truncation detected: expected {len(jsonl_content)} bytes, got {len(captured_bytes)}"
+    )
