@@ -207,7 +207,7 @@ P0-A (scaffolding)
 | SPEC-001 | Plugin Scaffolding + Hook Registration | IMPLEMENTED | 0 | P0-A |
 | SPEC-002 | Transcript Capture | IMPLEMENTED | 0 | P0-B |
 | SPEC-003 | Wiki Ingestion Engine | IMPLEMENTED | 0 | P0-C |
-| SPEC-004 | Incremental Update + Contradiction Detection | APPROVED | 0 | P0-D |
+| SPEC-004 | Incremental Update + Contradiction Detection | IMPLEMENTED | 0 | P0-D |
 | SPEC-005 | Manual Ingest Trigger | IMPLEMENTED | 1 | P1-A |
 | SPEC-006 | Wiki Query | DRAFT | 1 | P1-B |
 | SPEC-007 | Capture Scope Configuration | DRAFT | 2 | P2-A |
