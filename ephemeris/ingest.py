@@ -164,7 +164,14 @@ def ingest_one(
         log.log(session_id, "write", "ok", "No operations extracted; nothing to write")
         _cleanup_staging(transcript_path, dry_run)
         elapsed = int((time.monotonic() - start_ts) * 1000)
-        log.log(session_id, "complete", "ok", "Ingestion complete (no operations)", elapsed)
+        log.log(
+            session_id,
+            "complete",
+            "ok",
+            "Ingestion complete (no operations)",
+            elapsed,
+            pages_written=[],
+        )
         return PageResult(success=True, session_id=session_id)
 
     # --- Stage 6: Write wiki pages ---
@@ -205,12 +212,16 @@ def ingest_one(
     _cleanup_staging(transcript_path, dry_run)
 
     elapsed = int((time.monotonic() - start_ts) * 1000)
+    relative_pages = [
+        str(p.relative_to(wiki_root)) for p in pages_written
+    ]
     log.log(
         session_id,
         "complete",
         "ok",
         f"Ingestion complete: {len(pages_written)} page(s) written",
         elapsed,
+        pages_written=relative_pages,
     )
     return PageResult(
         success=True,

@@ -45,6 +45,7 @@ class IngestLogger:
         status: str,
         message: str,
         elapsed_ms: Optional[int] = None,
+        pages_written: Optional[list[str]] = None,
     ) -> None:
         """Append a diagnostic log entry.
 
@@ -55,6 +56,8 @@ class IngestLogger:
             status: Outcome — 'ok' or 'error'.
             message: Human-readable description of the event.
             elapsed_ms: Optional measured elapsed time in milliseconds.
+            pages_written: Optional list of relative page paths written,
+                           emitted on the ``complete`` phase for SPEC-004.
         """
         entry: dict[str, object] = {
             "ts": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -65,6 +68,8 @@ class IngestLogger:
         }
         if elapsed_ms is not None:
             entry["elapsed_ms"] = elapsed_ms
+        if pages_written is not None:
+            entry["pages_written"] = pages_written
 
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
