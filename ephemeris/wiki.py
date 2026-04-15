@@ -26,6 +26,46 @@ if TYPE_CHECKING:
     from ephemeris.prompts import PageOperation
 
 
+_PAGE_NAME_FORBIDDEN = ("..", "/", "\\", ":", "\x00")
+
+
+def _sanitize_page_name(name: str) -> str:
+    """Reject any page_name that could escape the wiki root or hit reserved chars.
+
+    Only bare filenames are allowed. Model-generated names that include path
+    separators, parent refs, or drive letters are rejected outright — we do not
+    try to 'fix' them, because any fix opens the door to further bypass.
+
+    Raises:
+        WikiWriteError: If the name is empty, contains forbidden tokens, or is
+                        not a bare filename component.
+    """
+    from ephemeris.exceptions import WikiWriteError
+
+    if not name or not name.strip():
+        raise WikiWriteError("page_name is empty")
+    stripped = name.strip()
+    for token in _PAGE_NAME_FORBIDDEN:
+        if token in stripped:
+            raise WikiWriteError(
+                f"page_name contains forbidden token {token!r}: {stripped!r}"
+            )
+    # Also reject if pathlib sees it as anything other than a single component.
+    if Path(stripped).name != stripped:
+        raise WikiWriteError(f"page_name must be a bare filename: {stripped!r}")
+    return stripped
+
+
+def _assert_contained(page_path: Path, wiki_root: Path) -> None:
+    """Raise WikiWriteError if page_path escapes wiki_root (belt-and-suspenders)."""
+    from ephemeris.exceptions import WikiWriteError
+
+    resolved = page_path.resolve()
+    wiki_root_resolved = wiki_root.resolve()
+    if not resolved.is_relative_to(wiki_root_resolved):
+        raise WikiWriteError(f"page_path escapes wiki_root: {resolved}")
+
+
 def _atomic_write_text(path: Path, content: str) -> None:
     """Atomically replace ``path`` with ``content``.
 
@@ -94,16 +134,18 @@ def _write_topic(
     citation: str,
 ) -> Path:
     """Create or update a topic page at wiki/topics/<kebab-case>.md."""
+    safe_name = _sanitize_page_name(op.page_name)
     topics_dir = wiki_root / "topics"
     topics_dir.mkdir(parents=True, exist_ok=True)
-    page_path = topics_dir / f"{op.page_name}.md"
+    page_path = topics_dir / f"{safe_name}.md"
+    _assert_contained(page_path, wiki_root)
 
     overview = op.content.get("overview", "")
     details = op.content.get("details", "")
 
     if not page_path.exists():
         # Create new page
-        content = f"# {_title(op.page_name)}\n\n"
+        content = f"# {_title(safe_name)}\n\n"
         if overview:
             content += f"## Overview\n{overview}\n\n"
         if details:
@@ -140,16 +182,18 @@ def _write_entity(
     citation: str,
 ) -> Path:
     """Create or update an entity page at wiki/entities/<PascalCase>.md."""
+    safe_name = _sanitize_page_name(op.page_name)
     entities_dir = wiki_root / "entities"
     entities_dir.mkdir(parents=True, exist_ok=True)
-    page_path = entities_dir / f"{op.page_name}.md"
+    page_path = entities_dir / f"{safe_name}.md"
+    _assert_contained(page_path, wiki_root)
 
     role = op.content.get("role", "")
     relationships: list[dict[str, str]] = op.content.get("relationships", [])
 
     if not page_path.exists():
         # Create new page
-        content = f"# {op.page_name}\n\n"
+        content = f"# {safe_name}\n\n"
         if role:
             content += f"## Role\n{role}\n\n"
         if relationships:
@@ -212,13 +256,14 @@ def append_to_decisions(
     Returns:
         Path to DECISIONS.md.
     """
+    safe_name = _sanitize_page_name(op.page_name)
     decisions_path = wiki_root / "DECISIONS.md"
 
     decision_text = op.content.get("decision", "")
     rationale = op.content.get("rationale", "")
     date = op.content.get("date", "")
 
-    entry = f"## [{date}] {op.page_name}\n\n"
+    entry = f"## [{date}] {safe_name}\n\n"
     if decision_text:
         entry += f"**Decision:** {decision_text}\n\n"
     if rationale:

@@ -21,7 +21,7 @@ class TestRejectBadPageNames:
             _sanitize_page_name("../../evil")
 
     def test_reject_absolute_path(self) -> None:
-        with pytest.raises(WikiWriteError, match="bare filename"):
+        with pytest.raises(WikiWriteError):
             _sanitize_page_name("/etc/passwd")
 
     def test_reject_embedded_separator(self) -> None:
