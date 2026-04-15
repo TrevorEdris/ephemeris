@@ -465,6 +465,25 @@ def test_pre_compact_exits_zero_on_capture_error(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# N-2: transcript_path non-string raises InvalidPayloadError
+# ---------------------------------------------------------------------------
+
+
+def test_capture_non_string_transcript_path_raises_invalid_payload(tmp_path: Path) -> None:
+    """N-2: transcript_path that is not a string raises InvalidPayloadError."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import InvalidPayloadError
+
+    staging_root = tmp_path / "staging"
+    payload = {"session_id": "n2-001", "transcript_path": 12345}
+
+    with pytest.raises(InvalidPayloadError) as exc_info:
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert "transcript_path" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
 # Path traversal rejection tests (Fix 1)
 # ---------------------------------------------------------------------------
 

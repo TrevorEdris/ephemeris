@@ -54,6 +54,10 @@ def parse_hook_payload(
         raise InvalidPayloadError("Payload missing required field 'session_id'")
 
     transcript_path_str = payload.get("transcript_path")
+    if transcript_path_str is not None and not isinstance(transcript_path_str, str):
+        raise InvalidPayloadError(
+            f"transcript_path must be a string, got {type(transcript_path_str).__name__!r}"
+        )
     if not transcript_path_str:
         raise EmptyTranscriptError(
             session_id=str(session_id),
