@@ -6,17 +6,19 @@
 **Last Updated:** 2026-04-15
 **P0-B Completed:** 2026-04-15
 **P0-C Completed:** 2026-04-15
+**P0-D Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
 - [x] P0-B: Transcript Capture (feat/spec-002-transcript-capture)
+- [x] P0-C: Wiki Ingestion Engine (feat/spec-003-wiki-ingestion-engine)
+- [x] P0-D: Incremental Update + Contradiction Detection (feat/spec-004-incremental-update)
 
 ### In Progress
 *(none)*
 
 ### Pending
-- [x] P0-C: Wiki Ingestion Engine (feat/spec-003-wiki-ingestion-engine)
-- [ ] Phase 0: Silent Wiki (P0-D remaining)
+- [ ] Phase 0: Silent Wiki — COMPLETE
 - [ ] Phase 1: Power-User Surface
 - [ ] Phase 2: Customization Layer
 
@@ -203,7 +205,7 @@ P0-A (scaffolding)
 | SPEC-001 | Plugin Scaffolding + Hook Registration | IMPLEMENTED | 0 | P0-A |
 | SPEC-002 | Transcript Capture | IMPLEMENTED | 0 | P0-B |
 | SPEC-003 | Wiki Ingestion Engine | IMPLEMENTED | 0 | P0-C |
-| SPEC-004 | Incremental Update + Contradiction Detection | DRAFT | 0 | P0-D |
+| SPEC-004 | Incremental Update + Contradiction Detection | APPROVED | 0 | P0-D |
 | SPEC-005 | Manual Ingest Trigger | DRAFT | 1 | P1-A |
 | SPEC-006 | Wiki Query | DRAFT | 1 | P1-B |
 | SPEC-007 | Capture Scope Configuration | DRAFT | 2 | P2-A |
