@@ -101,3 +101,31 @@ def test_capture_idempotent_identical_content(tmp_path: Path) -> None:
     # Exactly one file in the directory (no duplicate with different name)
     staged_files = list((staging_root / "pre-compact").iterdir())
     assert len(staged_files) == 1
+
+
+# ---------------------------------------------------------------------------
+# Step 7 RED: Differing content — second write wins
+# ---------------------------------------------------------------------------
+
+
+def test_capture_second_write_overwrites_first(tmp_path: Path) -> None:
+    """AC-4: Second capture for same session_id with different content overwrites."""
+    from ephemeris.capture import capture
+
+    content_v1 = b'{"role":"user","content":"version 1"}\n'
+    content_v2 = b'{"role":"user","content":"version 2"}\n{"role":"assistant","content":"ok"}\n'
+
+    transcript_file = tmp_path / "transcript.jsonl"
+    staging_root = tmp_path / "staging"
+
+    # First capture
+    transcript_file.write_bytes(content_v1)
+    payload = {"session_id": "over-001", "transcript_path": str(transcript_file)}
+    capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    # Second capture with different content
+    transcript_file.write_bytes(content_v2)
+    capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    dest = staging_root / "pre-compact" / "over-001.jsonl"
+    assert dest.read_bytes() == content_v2, "Expected second capture to win"
