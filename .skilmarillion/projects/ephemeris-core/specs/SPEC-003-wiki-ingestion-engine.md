@@ -3,7 +3,7 @@
 **Feature ID:** P0-C
 **Size:** FEATURE
 **Risk:** HIGH
-**Status:** DRAFT
+**Status:** IMPLEMENTED
 **Depends on:** P0-B (transcript capture)
 
 ## Problem Statement
