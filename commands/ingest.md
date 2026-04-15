@@ -30,12 +30,33 @@ the schema text in working memory for this run only.
 
 ### 2. List pending sessions
 
-`Glob`: `~/.claude/ephemeris/staging/pending/*.jsonl` (or
-`$EPHEMERIS_STAGING_ROOT/pending/*.jsonl` if the env var is set).
+`<staging_root>` is `$EPHEMERIS_STAGING_ROOT` if set and non-empty, else
+`~/.claude/ephemeris/staging`.
 
-- If `$ARGUMENTS` is non-empty, filter to the session-id matching `$ARGUMENTS`.
-  If zero matches, emit `No staged session matches <id>.` and stop.
-- If the pending directory is empty, emit `No pending sessions to ingest.` and
+Transcripts are captured by the hooks into one of two per-hook-type
+subdirectories:
+
+- `<staging_root>/session-end/<session-id>.jsonl` — written by the `SessionEnd` hook
+- `<staging_root>/pre-compact/<session-id>.jsonl` — written by the `PreCompact` hook
+
+After successful ingest each file is moved to a sibling `processed/` directory,
+e.g. `<staging_root>/session-end/processed/<session-id>.jsonl`. A file is
+considered **pending** when it lives directly in `<staging_root>/<hook-type>/`
+and is **not** under any `processed/` subdirectory.
+
+Run `Glob` twice to list the pending files (the single-`*` pattern is
+non-recursive and therefore does not match files under `processed/`):
+
+1. `Glob`: `<staging_root>/session-end/*.jsonl`
+2. `Glob`: `<staging_root>/pre-compact/*.jsonl`
+
+Union the two result lists. Remember each path's `<hook-type>` — it is the
+parent directory name and is needed later for the `mv` target.
+
+- If `$ARGUMENTS` is non-empty, filter to the session-id matching `$ARGUMENTS`
+  (the filename stem). If zero matches, emit `No staged session matches <id>.`
+  and stop.
+- If the unioned list is empty, emit `No pending sessions to ingest.` and
   stop.
 
 ### 3. Process each pending session
@@ -63,15 +84,23 @@ c. For each extracted page:
    - Append a citation to the page's `## Sessions` block: `> Source: [YYYY-MM-DD session-id]`.
 
 d. **Mark consumed** only after all pages for this session have been
-   successfully written: `Bash: mv <pending_path> <processed_path>` where
-   `<processed_path>` is the same filename under `pending/`'s sibling
-   `processed/` directory. Rename is atomic on same filesystem.
+   successfully written. Compute the processed path as
+   `<staging_root>/<hook-type>/processed/<session-id>.jsonl`, then run:
+
+   ```
+   Bash: mkdir -p <staging_root>/<hook-type>/processed && mv <pending_path> <processed_path>
+   ```
+
+   The `mkdir -p` is idempotent. The `mv` rename is atomic on the same
+   filesystem. `<hook-type>` is the parent directory name of `<pending_path>`
+   (either `session-end` or `pre-compact`) recorded in step 2.
 
 ### 4. Error handling
 
 - If any `Write` fails, stop processing the current session, do NOT run the
   `mv`, and continue to the next pending session. The JSONL stays in
-  `pending/` and the next run retries it.
+  `<staging_root>/<hook-type>/` (outside any `processed/` subdirectory) and
+  the next run retries it.
 - If reasoning over a transcript produces zero extracted pages, still run the
   `mv` — the session was processed, it just had no wiki-worthy content. Emit
   `<session-id>: 0 pages (no extractable content)`.
