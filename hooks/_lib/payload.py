@@ -5,11 +5,14 @@ from stdin. Handles empty input and malformed JSON defensively, always
 returning a dict so callers need not guard against None or exceptions.
 """
 
+from __future__ import annotations
+
 import json
 import sys
+from typing import Any
 
 
-def read_payload() -> dict:
+def read_payload() -> dict[str, Any]:
     """Read and parse the JSON payload from stdin.
 
     Returns a parsed dict on success. Returns an empty dict if stdin is
