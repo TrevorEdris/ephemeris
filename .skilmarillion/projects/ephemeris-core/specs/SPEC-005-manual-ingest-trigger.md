@@ -3,7 +3,7 @@
 **Feature ID:** P1-A
 **Size:** SMALL
 **Risk:** LOW
-**Status:** DRAFT
+**Status:** IMPLEMENTED
 **Depends on:** P0-D (incremental update + contradiction detection)
 
 ## Problem Statement

@@ -5,10 +5,14 @@ the wiki directory. Implements the discover → schema → prompt → model
 → parse → write → cleanup pipeline.
 
 Public API:
-    PageResult    — dataclass(success, session_id, pages_written, error)
-    IngestResult  — dataclass(results: list[PageResult])
+    PageResult       — dataclass(success, session_id, pages_written, error)
+    IngestResult     — dataclass(results: list[PageResult])
+    IngestSummary    — dataclass for CLI summary rendering
     ingest_one(transcript_path, wiki_root, model, log, session_id, session_date) -> PageResult
     ingest_all(staging_root, wiki_root, model, log) -> IngestResult
+    list_pending_sessions(staging_root) -> list[Path]
+    render_ingest_summary(summary: IngestSummary) -> str
+    main(args: list[str] | None) -> None
 
 CLI entry:
     python -m ephemeris.ingest                    # process all pending transcripts
@@ -43,13 +47,26 @@ class PageResult:
     Attributes:
         success: True if the transcript was fully processed without error.
         session_id: The session identifier.
-        pages_written: List of paths to pages that were written or updated.
+        pages_written: Complete list of paths written or updated this run
+            (union of pages_created and pages_updated). Maintained for
+            backward compatibility with SPEC-003/SPEC-004 callers and the
+            complete-log entry. Invariant:
+            ``len(pages_written) == len(pages_created) + len(pages_updated)``
+        pages_created: Subset of pages_written that were brand-new (did not
+            exist before this run). Mutually exclusive with pages_updated.
+        pages_updated: Subset of pages_written that merged into an existing
+            page. Mutually exclusive with pages_created.
+        contradictions: Count of conflict blocks injected across all page
+            operations in this session.
         error: Error message if success is False; otherwise empty string.
     """
 
     success: bool
     session_id: str
     pages_written: list[Path] = field(default_factory=list)
+    pages_created: list[Path] = field(default_factory=list)
+    pages_updated: list[Path] = field(default_factory=list)
+    contradictions: int = 0
     error: str = ""
 
 
@@ -70,6 +87,70 @@ class IngestResult:
     @property
     def failure_count(self) -> int:
         return sum(1 for r in self.results if not r.success)
+
+
+@dataclass
+class IngestSummary:
+    """Aggregated summary of a CLI ingest run.
+
+    Used by render_ingest_summary() to produce the structured summary block
+    printed at the end of every CLI invocation.
+
+    Attributes:
+        sessions_processed: Total sessions attempted (success + failure).
+        pages_created: Count of brand-new wiki pages written.
+        pages_updated: Count of existing pages that were updated.
+        contradictions: Count of conflict blocks injected across all sessions.
+        errors: Count of sessions that failed.
+        error_lines: Human-readable error lines for each failed session.
+    """
+
+    sessions_processed: int
+    pages_created: int
+    pages_updated: int
+    contradictions: int
+    errors: int
+    error_lines: list[str] = field(default_factory=list)
+
+
+def render_ingest_summary(summary: IngestSummary) -> str:
+    """Render a structured summary block from an IngestSummary.
+
+    Pure function — no I/O or side effects.
+
+    Args:
+        summary: Populated IngestSummary dataclass.
+
+    Returns:
+        Multi-line string with the summary block, ending in a newline.
+    """
+    lines = [
+        "=== Ingest Summary ===",
+        f"Sessions processed: {summary.sessions_processed}",
+        f"Pages created:      {summary.pages_created}",
+        f"Pages updated:      {summary.pages_updated}",
+        f"Contradictions:     {summary.contradictions}",
+        f"Errors:             {summary.errors}",
+    ]
+    for error_line in summary.error_lines:
+        lines.append(f"  ERROR: {error_line}")
+    return "\n".join(lines) + "\n"
+
+
+def list_pending_sessions(staging_root: Path) -> list[Path]:
+    """Return all pending (unprocessed) JSONL transcript paths under staging_root.
+
+    A pending transcript is any ``*.jsonl`` file found recursively under
+    staging_root. Files are returned sorted alphabetically by path for
+    deterministic ordering across runs.
+
+    Args:
+        staging_root: Root of the staging directory tree.
+
+    Returns:
+        Sorted list of Path objects pointing to JSONL transcript files.
+    """
+    return sorted(staging_root.rglob("*.jsonl"))
 
 
 def ingest_one(
@@ -205,6 +286,9 @@ def ingest_one(
         return PageResult(success=True, session_id=session_id)
 
     pages_written: list[Path] = []
+    pages_created: list[Path] = []
+    pages_updated: list[Path] = []
+    contradictions_count: int = 0
     # Build page_type_map for cross-reference resolution
     page_type_map: dict[str, str] = {op.page_name: op.page_type for op in operations}
 
@@ -235,6 +319,9 @@ def ingest_one(
                         success=False,
                         session_id=session_id,
                         pages_written=pages_written,
+                        pages_created=pages_created,
+                        pages_updated=pages_updated,
+                        contradictions=contradictions_count,
                         error=str(merge_exc),
                     )
 
@@ -247,6 +334,7 @@ def ingest_one(
                         log.log(session_id, "detect", "ok",
                                 f"Conflicts detected in {op.page_name!r}: {len(merge_result.conflicts)}")
                         merged = inject_conflict_blocks(merged, merge_result.conflicts)
+                        contradictions_count += len(merge_result.conflicts)
                     else:
                         log.log(session_id, "detect", "ok", f"No conflicts in {op.page_name!r}")
 
@@ -262,6 +350,9 @@ def ingest_one(
                         success=False,
                         session_id=session_id,
                         pages_written=pages_written,
+                        pages_created=pages_created,
+                        pages_updated=pages_updated,
+                        contradictions=contradictions_count,
                         error=str(detect_exc),
                     )
 
@@ -274,6 +365,7 @@ def ingest_one(
                 page_path = _page_path_for_op(op, wiki_root)
                 pending_writes.append((page_path, merged))
                 pages_written.append(page_path)
+                pages_updated.append(page_path)  # merged into existing page
             else:
                 # New topic/entity page or decision (AC-2.4)
                 log.log(session_id, "merge", "ok", f"No existing page; creating: {op.page_name!r}")
@@ -283,10 +375,12 @@ def ingest_one(
                     page_path, new_content = build_new_page_content(op, wiki_root, citation)
                     pending_writes.append((page_path, new_content))
                     pages_written.append(page_path)
+                    pages_created.append(page_path)  # brand-new page
                 else:
                     # Decision pages: always append-only, no pre-run state to protect
                     page_path = write_page(op, wiki_root, citation)
                     pages_written.append(page_path)
+                    pages_created.append(page_path)  # brand-new decision page
         except Exception as exc:
             elapsed = int((time.monotonic() - start_ts) * 1000)
             log.log(session_id, "write", "error", f"Failed to write {op.page_name!r}: {exc}", elapsed)
@@ -296,6 +390,9 @@ def ingest_one(
                 success=False,
                 session_id=session_id,
                 pages_written=pages_written,
+                pages_created=pages_created,
+                pages_updated=pages_updated,
+                contradictions=contradictions_count,
                 error=str(exc),
             )
 
@@ -314,6 +411,9 @@ def ingest_one(
                 success=False,
                 session_id=session_id,
                 pages_written=[],
+                pages_created=[],
+                pages_updated=[],
+                contradictions=contradictions_count,
                 error=str(exc),
             )
 
@@ -342,6 +442,9 @@ def ingest_one(
         success=True,
         session_id=session_id,
         pages_written=pages_written,
+        pages_created=pages_created,
+        pages_updated=pages_updated,
+        contradictions=contradictions_count,
     )
 
 
@@ -462,8 +565,19 @@ def _write_error_marker(
         pass
 
 
-if __name__ == "__main__":
+def main(argv: "list[str] | None" = None) -> None:
+    """CLI entry point for ephemeris.ingest.
+
+    Processes all pending transcripts or a single targeted session, prints
+    per-session progress lines (AC-2) and a structured summary block (AC-1),
+    and exits non-zero if any session fails (AC-6).
+
+    Args:
+        argv: Argument list (default: sys.argv[1:]). Passed directly to
+              argparse so tests can call main() without subprocess overhead.
+    """
     import argparse
+    import datetime
     import sys
 
     def _resolve_env(var: str, default: str) -> Path:
@@ -484,7 +598,38 @@ if __name__ == "__main__":
         action="store_true",
         help="Parse and plan without writing any files",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    # --- Validate session_id before any filesystem operations (MINOR-2) ---
+    # Mirrors the _sanitize_page_name defense from SPEC-002 for user-controlled inputs.
+    if args.session_id is not None:
+        sid = args.session_id
+        _INVALID_SESSION_CHARS = frozenset("/\\\x00:")
+        if not sid:
+            print(
+                "ephemeris.ingest: invalid session ID — must not be empty",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if ".." in sid.split("/")[0] or ".." in sid:
+            print(
+                f"ephemeris.ingest: invalid session ID {sid!r} — path traversal not allowed",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if any(c in sid for c in _INVALID_SESSION_CHARS):
+            bad = next(c for c in sid if c in _INVALID_SESSION_CHARS)
+            print(
+                f"ephemeris.ingest: invalid session ID {sid!r} — unsafe character {bad!r}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if Path(sid).is_absolute():
+            print(
+                f"ephemeris.ingest: invalid session ID {sid!r} — absolute paths not allowed",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     staging_root = _resolve_env(
         "EPHEMERIS_STAGING_ROOT", "~/.claude/ephemeris/staging"
@@ -512,8 +657,10 @@ if __name__ == "__main__":
             print(f"ephemeris.ingest: {exc}", file=sys.stderr)
             sys.exit(1)
 
+    today = datetime.date.today().isoformat()
+
     if args.session_id:
-        # Find the specific session transcript
+        # --- Targeted single-session mode (AC-5) ---
         candidates = list(staging_root.rglob(f"{args.session_id}.jsonl"))
         if not candidates:
             print(
@@ -522,33 +669,99 @@ if __name__ == "__main__":
             )
             sys.exit(1)
         transcript_path = candidates[0]
-        import datetime
 
+        print(f"[1/1] Ingesting session {args.session_id}...", flush=True)
         result_one = ingest_one(
             transcript_path=transcript_path,
             wiki_root=wiki_root,
             model=model,
             log=logger,
             session_id=args.session_id,
-            session_date=datetime.date.today().isoformat(),
+            session_date=today,
             dry_run=args.dry_run,
         )
-        if not result_one.success:
+
+        if result_one.success:
+            summary = IngestSummary(
+                sessions_processed=1,
+                pages_created=len(result_one.pages_created),
+                pages_updated=len(result_one.pages_updated),
+                contradictions=result_one.contradictions,
+                errors=0,
+                error_lines=[],
+            )
+            print(render_ingest_summary(summary), end="")
+        else:
+            summary = IngestSummary(
+                sessions_processed=1,
+                pages_created=0,
+                pages_updated=0,
+                contradictions=0,
+                errors=1,
+                error_lines=[f"{args.session_id}: {result_one.error}"],
+            )
+            print(render_ingest_summary(summary), end="")
             print(
                 f"ephemeris.ingest: failed — {result_one.error}", file=sys.stderr
             )
             sys.exit(1)
+
     else:
-        result_all = ingest_all(
-            staging_root=staging_root,
-            wiki_root=wiki_root,
-            model=model,
-            log=logger,
-            dry_run=args.dry_run,
-        )
-        if result_all.failure_count > 0:
-            print(
-                f"ephemeris.ingest: {result_all.failure_count} transcript(s) failed",
-                file=sys.stderr,
+        # --- Batch mode: all pending sessions ---
+        pending = list_pending_sessions(staging_root)
+
+        if not pending:
+            print("No pending sessions found.")
+            summary = IngestSummary(
+                sessions_processed=0,
+                pages_created=0,
+                pages_updated=0,
+                contradictions=0,
+                errors=0,
+                error_lines=[],
             )
+            print(render_ingest_summary(summary), end="")
+            return
+
+        total = len(pending)
+        pages_created_total = 0
+        pages_updated_total = 0
+        contradictions_total = 0
+        error_lines: list[str] = []
+
+        for i, transcript_path in enumerate(pending, start=1):
+            session_id = transcript_path.stem
+            print(f"[{i}/{total}] Ingesting session {session_id}...", flush=True)
+            result = ingest_one(
+                transcript_path=transcript_path,
+                wiki_root=wiki_root,
+                model=model,
+                log=logger,
+                session_id=session_id,
+                session_date=today,
+                dry_run=args.dry_run,
+            )
+            if result.success:
+                pages_created_total += len(result.pages_created)
+                pages_updated_total += len(result.pages_updated)
+                contradictions_total += result.contradictions
+            else:
+                error_lines.append(f"{session_id}: {result.error}")
+
+        errors_total = len(error_lines)
+        summary = IngestSummary(
+            sessions_processed=total,
+            pages_created=pages_created_total,
+            pages_updated=pages_updated_total,
+            contradictions=contradictions_total,
+            errors=errors_total,
+            error_lines=error_lines,
+        )
+        print(render_ingest_summary(summary), end="")
+
+        if errors_total > 0:
             sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

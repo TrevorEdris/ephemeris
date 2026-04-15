@@ -2,17 +2,19 @@
 
 ## Current Status
 
-**Phase:** 1 — Pending
-**Last Updated:** 2026-04-15 (PR #9 review fixes applied)
+**Phase:** 1 — In Progress
+**Last Updated:** 2026-04-15 (PR #10 — P1-A SPEC-005 implemented)
 **P0-B Completed:** 2026-04-15
 **P0-C Completed:** 2026-04-15
 **P0-D Completed:** 2026-04-15
+**P1-A Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
 - [x] P0-B: Transcript Capture (feat/spec-002-transcript-capture)
 - [x] P0-C: Wiki Ingestion Engine (feat/spec-003-wiki-ingestion-engine)
 - [x] P0-D: Incremental Update + Contradiction Detection (feat/spec-004-incremental-update, PR #9 https://github.com/TrevorEdris/ephemeris/pull/9)
+- [x] P1-A: Manual Ingest Trigger (feat/spec-005-manual-ingest-trigger, PR #10)
 
 ### In Progress
 *(none)*
@@ -97,16 +99,16 @@ Build the silent loop first and prove it. No visible surface until background in
 
 **Exit Criteria:** Users can trigger ingestion on demand and ask the wiki natural language questions via slash commands.
 
-### P1-A: Manual Ingest Trigger
+### P1-A: Manual Ingest Trigger ✓ IMPLEMENTED
 
 - **What:** A slash command lets the user force a wiki ingestion pass without waiting for the automatic post-session trigger.
 - **Depends on:** P0-D
 - **Risk:** Idempotency must be solid — double-ingesting a session must not corrupt the wiki.
 - **Checklist:**
-  - [ ] Implement slash command that triggers an ingestion pass on pending or specified sessions
-  - [ ] Show in-progress feedback while ingestion runs
-  - [ ] Show completion summary (pages created, pages updated)
-  - [ ] Verify running the command twice on the same sessions produces no duplicate content
+  - [x] Implement slash command that triggers an ingestion pass on pending or specified sessions
+  - [x] Show in-progress feedback while ingestion runs
+  - [x] Show completion summary (pages created, pages updated)
+  - [x] Verify running the command twice on the same sessions produces no duplicate content
 
 ### P1-B: Wiki Query
 
@@ -205,8 +207,8 @@ P0-A (scaffolding)
 | SPEC-001 | Plugin Scaffolding + Hook Registration | IMPLEMENTED | 0 | P0-A |
 | SPEC-002 | Transcript Capture | IMPLEMENTED | 0 | P0-B |
 | SPEC-003 | Wiki Ingestion Engine | IMPLEMENTED | 0 | P0-C |
-| SPEC-004 | Incremental Update + Contradiction Detection | APPROVED | 0 | P0-D |
-| SPEC-005 | Manual Ingest Trigger | DRAFT | 1 | P1-A |
+| SPEC-004 | Incremental Update + Contradiction Detection | IMPLEMENTED | 0 | P0-D |
+| SPEC-005 | Manual Ingest Trigger | IMPLEMENTED | 1 | P1-A |
 | SPEC-006 | Wiki Query | DRAFT | 1 | P1-B |
 | SPEC-007 | Capture Scope Configuration | DRAFT | 2 | P2-A |
 | SPEC-008 | Custom Wiki Schema | DRAFT | 2 | P2-B |
