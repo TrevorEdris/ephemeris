@@ -17,11 +17,36 @@ Public API:
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ephemeris.prompts import PageOperation
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Atomically replace ``path`` with ``content``.
+
+    Writes to a temp file in the same directory (same filesystem, so
+    os.replace is atomic on POSIX), then renames into place. Partial writes
+    never appear at ``path``.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def write_page(
@@ -84,7 +109,7 @@ def _write_topic(
         if details:
             content += f"## Details\n{details}\n\n"
         content += f"## Sessions\n{citation}\n"
-        page_path.write_text(content, encoding="utf-8")
+        _atomic_write_text(page_path, content)
     else:
         # Append session section — preserve existing content
         existing = page_path.read_text(encoding="utf-8")
@@ -104,7 +129,7 @@ def _write_topic(
                 + new_section
                 + existing[sessions_idx:]
             )
-        page_path.write_text(existing, encoding="utf-8")
+        _atomic_write_text(page_path, existing)
 
     return page_path
 
@@ -136,7 +161,7 @@ def _write_entity(
                     content += f"- [{entity_name}]({entity_name}.md) — {description}\n"
             content += "\n"
         content += f"## Sessions\n{citation}\n"
-        page_path.write_text(content, encoding="utf-8")
+        _atomic_write_text(page_path, content)
     else:
         # Append session info — preserve existing content
         existing = page_path.read_text(encoding="utf-8")
@@ -167,7 +192,7 @@ def _write_entity(
             existing = existing.rstrip() + f"\n{citation}\n"
         else:
             existing = existing.rstrip() + f"\n\n## Sessions\n{citation}\n"
-        page_path.write_text(existing, encoding="utf-8")
+        _atomic_write_text(page_path, existing)
 
     return page_path
 
@@ -207,7 +232,7 @@ def append_to_decisions(
     else:
         new_content = "# Decision Log\n\n" + entry
 
-    decisions_path.write_text(new_content, encoding="utf-8")
+    _atomic_write_text(decisions_path, new_content)
     return decisions_path
 
 
@@ -271,7 +296,7 @@ def add_cross_references(
 
     if modified:
         try:
-            source_page.write_text(source_content, encoding="utf-8")
+            _atomic_write_text(source_page, source_content)
         except OSError:
             pass
 
@@ -293,7 +318,7 @@ def _add_back_link(ref_path: Path, source_page: Path, wiki_root: Path) -> None:
     if back_link not in ref_content:
         ref_content = ref_content.rstrip() + f"\n\n## See Also\n- {back_link}\n"
         try:
-            ref_path.write_text(ref_content, encoding="utf-8")
+            _atomic_write_text(ref_path, ref_content)
         except OSError:
             pass
 
