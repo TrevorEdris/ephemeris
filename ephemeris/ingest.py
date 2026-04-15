@@ -24,6 +24,8 @@ Environment overrides:
     EPHEMERIS_WIKI_ROOT     — wiki root (default: ~/.claude/ephemeris/wiki)
     EPHEMERIS_LOG_PATH      — diagnostic log (default: ~/.claude/ephemeris/ephemeris.log)
     EPHEMERIS_MODEL_CLIENT  — 'anthropic' or 'fake' (default: 'anthropic')
+    EPHEMERIS_SCHEMA_PATH   — override schema file path; takes precedence over
+                              ~/.claude/ephemeris/schema.md and wiki_root/SCHEMA.md
     ANTHROPIC_API_KEY       — required for AnthropicModelClient
 """
 

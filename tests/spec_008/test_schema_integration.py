@@ -16,7 +16,6 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -302,6 +301,66 @@ def test_ingest_all_reads_schema_file_once(
 
     assert read_count[0] == 1, (
         f"Schema file must be read exactly once per ingest_all run, "
+        f"but was read {read_count[0]} time(s)"
+    )
+
+
+def test_ingest_all_reads_schema_file_once_via_production_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-9 production path: ingest_all reads the user_schema_path (Path.home()-based)
+    file exactly once even when processing multiple sessions, without EPHEMERIS_SCHEMA_PATH.
+
+    This exercises the production wiring where resolve_schema is called with the
+    user_schema_path kwarg (not the env var seam).
+    """
+    from ephemeris.ingest import ingest_all
+    from ephemeris.log import IngestLogger
+    from ephemeris.model import FakeModelClient
+
+    # Ensure env var is NOT set — exercises the user_schema_path production path
+    monkeypatch.delenv("EPHEMERIS_SCHEMA_PATH", raising=False)
+
+    # Fake HOME: place schema at the well-known path
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    schema_dir = fake_home / ".claude" / "ephemeris"
+    schema_dir.mkdir(parents=True)
+    schema_file = schema_dir / "schema.md"
+    schema_file.write_text("# Production Path Schema\nFor read-count testing.\n", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+    wiki_root = tmp_path / "wiki"
+    wiki_root.mkdir()
+    staging_root = tmp_path / "staging"
+
+    # Stage 3 transcripts — schema must be read exactly once regardless of count
+    _make_transcript(staging_root, "prod-sess-a")
+    _make_transcript(staging_root, "prod-sess-b")
+    _make_transcript(staging_root, "prod-sess-c")
+
+    read_count: list[int] = [0]
+    original_read_text = Path.read_text
+
+    def counting_read_text(self: Path, *args, **kwargs) -> str:  # type: ignore[override]
+        if self == schema_file:
+            read_count[0] += 1
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+    log = IngestLogger(tmp_path / "test.log")
+
+    ingest_all(
+        staging_root=staging_root,
+        wiki_root=wiki_root,
+        model=FakeModelClient(),
+        log=log,
+    )
+
+    assert read_count[0] == 1, (
+        f"Schema file must be read exactly once per ingest_all run via production path, "
         f"but was read {read_count[0]} time(s)"
     )
 
