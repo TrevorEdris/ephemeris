@@ -188,3 +188,51 @@ def test_capture_nonexistent_transcript_path_raises(tmp_path: Path) -> None:
         capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
 
     assert "empty-003" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Steps 11 + 13 RED: Malformed payload and missing session_id
+# ---------------------------------------------------------------------------
+
+
+def test_capture_non_dict_payload_raises_invalid_payload(tmp_path: Path) -> None:
+    """AC-6: Non-dict payload raises InvalidPayloadError; no file written."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import InvalidPayloadError
+
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(InvalidPayloadError):
+        capture(hook_type="pre-compact", payload="not a dict", staging_root=staging_root)  # type: ignore[arg-type]
+
+    assert not staging_root.exists(), "Staging dir should not be created for invalid payload"
+
+
+def test_capture_missing_session_id_raises_invalid_payload(tmp_path: Path) -> None:
+    """AC-6: Payload missing session_id raises InvalidPayloadError."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import CaptureError, InvalidPayloadError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user"}\n')
+    payload = {"transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(InvalidPayloadError) as exc_info:
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    assert isinstance(exc_info.value, CaptureError)
+
+
+def test_capture_empty_session_id_raises_invalid_payload(tmp_path: Path) -> None:
+    """AC-6: Payload with empty string session_id raises InvalidPayloadError."""
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import InvalidPayloadError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user"}\n')
+    payload = {"session_id": "", "transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+
+    with pytest.raises(InvalidPayloadError):
+        capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
