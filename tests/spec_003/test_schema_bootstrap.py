@@ -20,3 +20,19 @@ def test_bootstrap_writes_schema_on_first_run(tmp_path: Path) -> None:
     bootstrap_schema(wiki_root)
     assert schema_path.exists()
     assert schema_path.stat().st_size > 0
+
+
+def test_bootstrap_skips_existing_schema(tmp_path: Path) -> None:
+    """AC-1.2: Given existing SCHEMA.md, bootstrap does not overwrite it."""
+    from ephemeris.schema import bootstrap_schema
+
+    wiki_root = tmp_path / "wiki"
+    wiki_root.mkdir()
+    schema_path = wiki_root / "SCHEMA.md"
+
+    sentinel = "SENTINEL_DO_NOT_OVERWRITE"
+    schema_path.write_text(sentinel, encoding="utf-8")
+
+    bootstrap_schema(wiki_root)
+
+    assert schema_path.read_text(encoding="utf-8") == sentinel
