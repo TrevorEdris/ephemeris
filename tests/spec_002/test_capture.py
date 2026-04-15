@@ -528,3 +528,60 @@ def test_capture_rejects_session_id_with_parent_ref_as_suffix(tmp_path: Path) ->
     if staging_root.exists():
         jsonl_files = list(staging_root.rglob("*.jsonl"))
         assert jsonl_files == [], f"No .jsonl files should be written; found: {jsonl_files}"
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: tmp file cleaned up on write failure (RED first)
+# ---------------------------------------------------------------------------
+
+
+def test_capture_cleans_up_tmp_on_write_failure(tmp_path: Path) -> None:
+    """AC-8: No .tmp file left behind when write fails before os.replace."""
+    import tempfile
+    from contextlib import contextmanager
+    from unittest.mock import patch
+
+    from ephemeris.capture import capture
+    from ephemeris.exceptions import StagingUnavailableError
+
+    transcript_file = tmp_path / "t.jsonl"
+    transcript_file.write_bytes(b'{"role":"user","content":"hi"}\n')
+
+    payload = {"session_id": "tmp-cleanup-001", "transcript_path": str(transcript_file)}
+    staging_root = tmp_path / "staging"
+    dest_dir = staging_root / "pre-compact"
+
+    # Intercept NamedTemporaryFile: create the real file (so it exists on disk),
+    # then raise OSError during write to simulate a mid-write failure.
+    _real_ntf = tempfile.NamedTemporaryFile
+
+    @contextmanager
+    def _failing_ntf(**kwargs):  # type: ignore[no-untyped-def]
+        # Create real temp file so it exists on disk
+        real = _real_ntf(**kwargs)
+        try:
+            # Simulate the write raising before completion
+            class _FailWriter:
+                name = real.name
+
+                def write(self, data):  # type: ignore[no-untyped-def]
+                    raise OSError("simulated write failure")
+
+                def __enter__(self):  # type: ignore[no-untyped-def]
+                    return self
+
+                def __exit__(self, *a):  # type: ignore[no-untyped-def]
+                    real.close()
+
+            yield _FailWriter()
+        finally:
+            real.close()
+
+    with patch("ephemeris.capture.tempfile.NamedTemporaryFile", _failing_ntf):
+        with pytest.raises(StagingUnavailableError):
+            capture(hook_type="pre-compact", payload=payload, staging_root=staging_root)
+
+    # No .tmp file should remain in the staging dest dir
+    if dest_dir.exists():
+        tmp_files = list(dest_dir.glob("*.tmp"))
+        assert tmp_files == [], f"Orphaned .tmp files found: {tmp_files}"
