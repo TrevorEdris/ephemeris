@@ -1,0 +1,25 @@
+{
+  "description": "ephemeris lifecycle hooks — post-session capture and pre-compaction capture",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/post_session.py"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/pre_compact.py"
+          }
+        ]
+      }
+    ]
+  }
+}
