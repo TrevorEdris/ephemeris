@@ -1,0 +1,13 @@
+{
+  "name": "ephemeris",
+  "owner": {
+    "name": "TrevorEdris"
+  },
+  "plugins": [
+    {
+      "name": "ephemeris",
+      "source": "./",
+      "description": "Silent session wiki: automatically captures and persists knowledge from every Claude Code session into a local markdown wiki — zero configuration required."
+    }
+  ]
+}
