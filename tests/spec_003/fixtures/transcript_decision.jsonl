@@ -1,0 +1,4 @@
+{"type": "system", "content": "Session started.", "timestamp": "2026-04-15T11:00:00Z"}
+{"type": "user", "content": "We need to decide on the database migration strategy.", "timestamp": "2026-04-15T11:00:01Z"}
+{"type": "assistant", "content": "I recommend using forward-only migrations with explicit rollback scripts. Rationale: auto-rollback can leave the database in an inconsistent state during complex schema changes. Manual rollback scripts give operators full control.", "timestamp": "2026-04-15T11:00:10Z"}
+{"type": "user", "content": "Agreed, that's our decision.", "timestamp": "2026-04-15T11:00:20Z"}

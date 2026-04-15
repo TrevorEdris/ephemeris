@@ -1,0 +1,7 @@
+{"type": "system", "content": "New session started.", "timestamp": "2026-04-15T10:00:00Z"}
+{"type": "user", "content": "Let's implement the error handling strategy for the ephemeris project.", "timestamp": "2026-04-15T10:00:01Z"}
+{"type": "assistant", "content": "I'll implement a base AppError class with typed subclasses. All domain errors should inherit from CaptureError to allow callers to catch at the right granularity. We should use explicit exception chaining with 'raise X from Y' to preserve root causes.", "timestamp": "2026-04-15T10:00:05Z"}
+{"type": "user", "content": "Good. And what about the TranscriptCapture component?", "timestamp": "2026-04-15T10:01:00Z"}
+{"type": "assistant", "content": "TranscriptCapture is the core entity that reads transcript files from Claude Code hook payloads and persists them atomically to staging storage. It uses os.replace() for atomic writes — this is a key architectural decision we should record.", "timestamp": "2026-04-15T10:01:10Z"}
+{"type": "user", "content": "Agreed. Let's use os.replace for all staging writes.", "timestamp": "2026-04-15T10:01:30Z"}
+{"type": "assistant", "content": "Decision: Use os.replace() for all staging writes. Rationale: atomic rename guarantees readers never see partial data and no orphaned temp files remain on crash.", "timestamp": "2026-04-15T10:01:35Z"}
