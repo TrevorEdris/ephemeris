@@ -151,6 +151,8 @@ def stage_transcript(
     source_bytes = src.read_bytes()
 
     # Atomic write: write to temp file in same dir, then rename.
+    # Track tmp_path so we can unlink on any failure before os.replace.
+    tmp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
             dir=dest_dir, delete=False, suffix=".tmp"
@@ -158,6 +160,9 @@ def stage_transcript(
             tmp_path = Path(tmp_file.name)
             tmp_file.write(source_bytes)
     except OSError as exc:
+        # Clean up the temp file if it was created before the failure.
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
         raise StagingUnavailableError(
             f"Cannot write to staging directory {dest_dir}: {exc}"
         ) from exc
