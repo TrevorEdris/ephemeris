@@ -45,3 +45,29 @@ def test_capture_pre_compact_writes_transcript_to_staging(tmp_path: Path) -> Non
     dest = staging_root / "pre-compact" / "abc-123.jsonl"
     assert dest.exists(), f"Expected staged file at {dest}"
     assert dest.read_bytes() == jsonl_content
+
+
+# ---------------------------------------------------------------------------
+# Step 3 RED: SessionEnd payload writes to session-end subdir
+# ---------------------------------------------------------------------------
+
+
+def test_capture_session_end_writes_to_session_end_subdir(tmp_path: Path) -> None:
+    """AC-2: SessionEnd payload -> persists to session-end subdir."""
+    from ephemeris.capture import capture
+
+    jsonl_content = b'{"role":"user","content":"bye"}\n'
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_file.write_bytes(jsonl_content)
+
+    payload = {
+        "session_id": "sess-456",
+        "transcript_path": str(transcript_file),
+    }
+    staging_root = tmp_path / "staging"
+
+    capture(hook_type="session-end", payload=payload, staging_root=staging_root)
+
+    dest = staging_root / "session-end" / "sess-456.jsonl"
+    assert dest.exists(), f"Expected staged file at {dest}"
+    assert dest.read_bytes() == jsonl_content
