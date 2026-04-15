@@ -4,15 +4,17 @@
 
 **Phase:** 0 — In Progress
 **Last Updated:** 2026-04-15
+**P0-B Completed:** 2026-04-15
 
 ### Completed
 - [x] P0-A: Plugin Scaffolding + Hook Registration (feat/spec-001-plugin-scaffolding)
+- [x] P0-B: Transcript Capture (feat/spec-002-transcript-capture)
 
 ### In Progress
 *(none)*
 
 ### Pending
-- [ ] Phase 0: Silent Wiki (P0-B through P0-D remaining)
+- [ ] Phase 0: Silent Wiki (P0-C through P0-D remaining)
 - [ ] Phase 1: Power-User Surface
 - [ ] Phase 2: Customization Layer
 
@@ -42,17 +44,17 @@ Build the silent loop first and prove it. No visible surface until background in
   - [x] Verify plugin loads cleanly with zero user configuration on a fresh install
   - [x] Verify both hooks fire and their payloads are accessible (log payload shape for P0-B)
 
-### P0-B: Transcript Capture
+### P0-B: Transcript Capture ✓ IMPLEMENTED
 
 - **What:** On each hook event, capture the session transcript and store it locally so the ingestion engine can process it. Nothing is written to the wiki yet.
 - **Depends on:** P0-A
 - **Risk:** Pre-compaction hook may not carry the same payload shape as post-session hook; handle both defensively.
 - **Checklist:**
-  - [ ] Capture session transcript from pre-compaction hook payload
-  - [ ] Capture session transcript from post-session hook payload
-  - [ ] Store raw transcript to a consistent, predictable local path keyed by session
-  - [ ] Verify captured transcript is complete (not truncated) for a typical 60-minute session
-  - [ ] Verify capture is idempotent: re-running on the same session produces the same stored result
+  - [x] Capture session transcript from pre-compaction hook payload
+  - [x] Capture session transcript from post-session hook payload
+  - [x] Store raw transcript to a consistent, predictable local path keyed by session
+  - [x] Verify captured transcript is complete (not truncated) for a typical 60-minute session
+  - [x] Verify capture is idempotent: re-running on the same session produces the same stored result
 
 ### P0-C: Wiki Ingestion Engine
 
@@ -197,7 +199,7 @@ P0-A (scaffolding)
 | ID | Name | Status | Phase | Roadmap Ref |
 |----|------|--------|-------|-------------|
 | SPEC-001 | Plugin Scaffolding + Hook Registration | IMPLEMENTED | 0 | P0-A |
-| SPEC-002 | Transcript Capture | DRAFT | 0 | P0-B |
+| SPEC-002 | Transcript Capture | IMPLEMENTED | 0 | P0-B |
 | SPEC-003 | Wiki Ingestion Engine | DRAFT | 0 | P0-C |
 | SPEC-004 | Incremental Update + Contradiction Detection | DRAFT | 0 | P0-D |
 | SPEC-005 | Manual Ingest Trigger | DRAFT | 1 | P1-A |
