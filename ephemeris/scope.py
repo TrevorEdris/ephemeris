@@ -66,6 +66,11 @@ def load_scope_config(path: Optional[Path] = None) -> ScopeConfig:
     - The JSON has an unexpected schema (include/exclude not lists).
     A WARN-level log is emitted for the last two cases.
 
+    Hot-reload guarantee (AC-4): this function reads the file from disk on
+    every call with no caching between invocations. Because each hook
+    invocation calls load_scope_config() fresh, any file edit takes effect
+    on the next hook invocation automatically — no process restart required.
+
     Args:
         path: Explicit path to the scope config. Overrides env var and default.
 
