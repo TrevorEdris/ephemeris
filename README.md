@@ -10,45 +10,41 @@ Zero configuration for the default path. Opt-in scoping and schema customization
 
 ---
 
-## How it works
+## How it works (v0.4.0)
 
 ```
-Claude Code session
-       │
-       │  SessionEnd / PreCompact hook fires
-       ▼
-┌──────────────┐       ┌──────────────┐
-│  bootstrap   │       │   capture    │
-│  schema copy │       │  (hook py)   │
-│              │       │              │
-└──────────────┘       └──────┬───────┘
+~/.claude/projects/<encoded-cwd>/<id>.jsonl   ← native Claude Code transcripts
                               │
+                              │  /ephemeris:ingest
                               ▼
-                       ┌──────────────┐
-                       │    stage     │
-                       │  (JSONL +    │
-                       │   journal)   │
-                       └──────┬───────┘
-                              │
-                              │  /ephemeris:ingest (SPEC-010)
-                              ▼
-                       ┌──────────────┐
-                       │     wiki     │
-                       │  (markdown)  │
-                       └──────┬───────┘
-                              │
-                              │  /ephemeris:query (SPEC-011)
-                              ▼
-                       ┌──────────────┐
-                       │   grounded   │
-                       │   answer +   │
-                       │   citations  │
-                       └──────────────┘
+              ┌────────────────────────────┐
+              │ Source readers             │
+              │  - native-transcript       │
+              │  - session-docs (opt-in)   │
+              │  - arbitrary-md (paths)    │
+              └─────────────┬──────────────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │     wiki     │
+                     │  (markdown)  │
+                     └──────┬───────┘
+                            │
+                            │  /ephemeris:query
+                            ▼
+                     ┌──────────────┐
+                     │   grounded   │
+                     │   answer +   │
+                     │   citations  │
+                     └──────────────┘
 ```
 
-1. **Capture** — `hooks/post_session.py` and `hooks/pre_compact.py` run on Claude Code's `SessionEnd` and `PreCompact` events. Each hook bootstraps the default schema copy to `~/.claude/ephemeris/default-schema.md`, then reads the hook payload, validates the transcript path, and stages the raw JSONL to `~/.claude/ephemeris/staging/<hook_type>/<session_id>.jsonl` via atomic rename.
-2. **Ingest** — the `/ephemeris:ingest` slash command (SPEC-010) walks the staging root, reads each transcript using the active session's own model, and applies the resulting page operations to `~/.claude/ephemeris/wiki/` through a transactional `StageWriter`.
-3. **Query** — `/ephemeris:query "<question>"` (SPEC-011) runs retrieval over the wiki and returns an answer with an explicit `**Sources:**` block grounded entirely in captured content.
+1. **Sources** — `/ephemeris:ingest` reads from one or more configured sources. The default config enables only `native-claude-projects`, which scans the JSONL transcripts Claude Code already writes to `~/.claude/projects/`. No staging copies, no hooks required. Power users can add `session-docs` or `arbitrary-md` sources via `~/.claude/ephemeris/config.json`.
+2. **Cursor** — `~/.claude/ephemeris/cursor.json` records the last-seen mtime per locator so subsequent ingests are incremental.
+3. **Citation dedup** — every wiki page has a `## Sessions` block; appending uses a stable `[YYYY-MM-DD <kind>:<id>]` key, so re-running ingest never duplicates citations.
+4. **Query** — `/ephemeris:query "<question>"` runs retrieval over the wiki and returns an answer with an explicit `## Sources` block grounded entirely in captured content.
+
+> **Migration from v0.1.x–v0.3.x:** the SessionEnd / PreCompact hooks are now no-ops. To replay backlog from prior installs run `python scripts/backfill.py --legacy-staging --with-cursor-init`.
 
 ---
 
@@ -79,22 +75,54 @@ That is the only required configuration. First hook fire creates the staging and
 
 Ephemeris reads from well-known paths under `~/.claude/ephemeris/` and honors a small set of environment overrides.
 
-### Capture scope (optional)
+### Multi-source config (`~/.claude/ephemeris/config.json`)
 
-Create `~/.claude/plugins/ephemeris/scope.json` to filter which sessions get captured by cwd:
+The default config is bootstrapped on first run. It enables only the universal native-transcript source:
 
 ```json
 {
-  "include": ["/Users/me/src/work/**"],
-  "exclude": ["/Users/me/src/work/secrets/**"]
+  "version": 1,
+  "wiki_root": "~/.claude/ephemeris/wiki",
+  "cursor_path": "~/.claude/ephemeris/cursor.json",
+  "sources": [
+    {
+      "id": "native-claude-projects",
+      "kind": "native-transcript",
+      "root": "~/.claude/projects/",
+      "scope": {
+        "exclude": ["~/.claude/**", "**/ephemeris/**"]
+      },
+      "filter_title_gen": true
+    }
+  ]
 }
 ```
 
+Add a `session-docs` source to ingest your own dated session-doc tree:
+
+```json
+{
+  "id": "my-session-docs",
+  "kind": "session-docs",
+  "root": "~/path/to/your/session-docs",
+  "dir_pattern": "^(\\d{4}-\\d{2}-\\d{2})[_-](.+)$",
+  "extractors": {
+    "SESSION.md":   { "sections": ["Goal", "Decisions", "Status"] },
+    "DISCOVERY.md": { "sections": ["Findings", "Gaps", "Open questions"] },
+    "PLAN.md":      { "sections": ["Target files", "Steps", "Risks", "Verification"] }
+  }
+}
+```
+
+The plugin ships **no built-in heading patterns** — `extractors` is opt-in. With no patterns the source still works in pass-through mode (raw markdown handed to the model).
+
+### Scope (cwd glob filtering for native-transcript)
+
+The `scope` block on a `native-transcript` source filters by the JSONL's authoritative `cwd` field (with a fallback decode of the encoded directory name):
+
+- `include`: list of glob patterns; if non-empty, only matching cwds are scanned.
+- `exclude`: list of glob patterns; matching cwds are always skipped (wins over include).
 - Glob syntax: `**` matches across path segments, `*` matches within one segment, `?` matches one non-slash char.
-- Exclude wins over include. Sessions whose cwd matches any exclude pattern are always skipped.
-- If the file is absent, all sessions are captured (default is permissive).
-- If the file is present but invalid JSON, a warning is logged and capture falls back to permissive.
-- Config re-reads on every hook invocation — no restart needed.
 
 ### Wiki schema override (optional)
 
@@ -106,10 +134,10 @@ The shipped default schema is copied to `~/.claude/ephemeris/default-schema.md` 
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `EPHEMERIS_STAGING_ROOT` | `~/.claude/ephemeris/staging` | Where hooks stage transcripts |
 | `EPHEMERIS_WIKI_ROOT` | `~/.claude/ephemeris/wiki` | Where ingestion writes wiki pages |
 | `EPHEMERIS_LOG_PATH` | `~/.claude/ephemeris/ephemeris.log` | Diagnostic log |
-| `EPHEMERIS_SCOPE_CONFIG` | `~/.claude/plugins/ephemeris/scope.json` | Capture scope config path |
+| `EPHEMERIS_SCHEMA_PATH` | (unset) | Override path to ingest schema |
+| `EPHEMERIS_STAGING_ROOT` | `~/.claude/ephemeris/staging` | Legacy staging root (only used by `scripts/backfill.py --legacy-staging`) |
 
 ---
 
@@ -134,7 +162,7 @@ Pages are organized into three types:
 | Entity | `entities/` | `PascalCase.md` | Role, Relationships, Sessions |
 | Decision | `DECISIONS.md` | `## [YYYY-MM-DD] <title>` | Decision, Rationale, Session |
 
-Every page ends with a `## Sessions` citation block listing contributing sessions in the format `> Source: [YYYY-MM-DD session-id]`. Citations are appended by the ingestion engine — the model never writes them itself.
+Every page ends with a `## Sessions` citation block listing contributing sessions in the format `> Source: [YYYY-MM-DD <kind>:<id-or-slug>]`. Citations are appended by the ingestion engine via `ephemeris.cli cite`, which dedups against both the new kind-prefixed format and the legacy `[YYYY-MM-DD <id>]` format used by v0.1.x–v0.3.x.
 
 ---
 

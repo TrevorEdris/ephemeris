@@ -1,0 +1,5 @@
+{"type":"permission-mode","permissionMode":"default","sessionId":"aaaaaaaa-1111-2222-3333-444444444444"}
+{"type":"user","content":"We need to refactor the auth module to use JWT tokens. Plan it.","timestamp":"2026-04-19T10:00:00Z","cwd":"/Users/test/test-app","sessionId":"aaaaaaaa-1111-2222-3333-444444444444"}
+{"type":"assistant","content":"Reading auth module first.","timestamp":"2026-04-19T10:00:05Z"}
+{"type":"user","content":"Approved. Proceed with implementation.","timestamp":"2026-04-19T10:05:00Z"}
+{"type":"assistant","content":"Implementation complete. JWT tokens issued at /auth/login, validated by middleware.","timestamp":"2026-04-19T10:30:00Z"}

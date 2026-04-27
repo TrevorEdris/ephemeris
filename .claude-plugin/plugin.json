@@ -1,7 +1,7 @@
 {
   "name": "ephemeris",
   "description": "Silent session wiki: automatically captures and persists knowledge from every Claude Code session into a local markdown wiki — zero configuration required.",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "author": {
     "name": "TrevorEdris",
     "url": "https://github.com/TrevorEdris"

@@ -1,0 +1,2 @@
+{"type":"user","content":"Generate a concise 3-4 word title for a coding session based on the user's first message. Output ONLY the title in Title-Case separated by hyphens. No explanation, no quotes, no punctuation. Examples: Build-Auth-Flow, Fix-Login-Bug","timestamp":"2026-04-19T10:00:00Z"}
+{"type":"assistant","content":"Refactor-Auth-JWT","timestamp":"2026-04-19T10:00:01Z"}

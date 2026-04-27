@@ -1,112 +1,130 @@
 ---
-description: Ingest pending Claude Code sessions into the local wiki using the current session's model.
-argument-hint: "[<session-id>]"
+description: Ingest Claude Code session content into the local wiki using the current session's model.
+argument-hint: "[<path-or-flags>]"
 allowed-tools:
   - Bash
   - Read
   - Write
   - Glob
+  - Grep
 ---
 
 # /ephemeris:ingest
 
-Process pending Claude Code session transcripts into the local wiki. All model
-reasoning happens in this session — no subprocess, no API key, no outbound calls.
+Process Claude Code session content into the local wiki. All model reasoning
+happens in this session — no subprocess, no API key, no outbound calls.
+
+The command reads from one or more **sources**. By default the only enabled
+source is `native-claude-projects`, which scans the JSONL transcripts Claude
+Code already writes to `~/.claude/projects/`. No staging, no duplication, no
+hooks required.
+
+## Invocation forms
+
+- `/ephemeris:ingest` — walk every source declared in
+  `~/.claude/ephemeris/config.json` (a sensible default is bootstrapped on
+  first run); ingest only locators newer than the cursor watermark.
+- `/ephemeris:ingest <path>` — ingest one path explicitly. Auto-detected:
+  - A `*.jsonl` file → treat as a native transcript.
+  - A directory under `~/.claude/projects/` → scan as native-transcript root.
+  - A directory matching `<config>.dir_pattern` (or any directory containing
+    `*.md` files when no pattern is configured) → scan as a session-docs
+    root, or read as a single session-docs locator if the path itself is a
+    leaf session directory.
+  - A single `*.md` file → arbitrary-markdown source.
+- `/ephemeris:ingest --since=<iso-date>` — restrict to locators with mtime ≥
+  the given date.
+- `/ephemeris:ingest --session=<id>` — ingest only the locator whose
+  identifier equals `<id>`.
+- `/ephemeris:ingest --dry-run` — list what would be ingested; no writes.
+- `/ephemeris:ingest --legacy-staging` — also walk
+  `~/.claude/ephemeris/staging/{session-end,pre-compact,processed,pending}/*.jsonl`
+  to mop up content captured by the pre-v0.2 hook pipeline. Idempotent;
+  citation dedup makes re-runs safe.
 
 ## Instructions
 
 ### 1. Resolve the schema
 
-Try each of these in order and use the first that exists and is non-empty. Hold
-the schema text in working memory for this run only.
+Try each of these in order; use the first that exists and is non-empty.
+Hold the schema text in working memory for this run only.
 
-1. `$EPHEMERIS_SCHEMA_PATH` — check with `Bash: echo "$EPHEMERIS_SCHEMA_PATH"`;
-   if non-empty, `Read` that path.
+1. `$EPHEMERIS_SCHEMA_PATH` — `Bash: echo "$EPHEMERIS_SCHEMA_PATH"`; if
+   non-empty, `Read` that path.
 2. `~/.claude/ephemeris/schema.md` — user personal override.
-3. `<wiki_root>/SCHEMA.md` where `<wiki_root>` is `$EPHEMERIS_WIKI_ROOT` (or
-   `~/.claude/ephemeris/wiki` if unset) — per-wiki override.
-4. `~/.claude/ephemeris/default-schema.md` — shipped default, bootstrapped on
-   every hook fire.
+3. `<wiki_root>/SCHEMA.md` where `<wiki_root>` is the resolved wiki root
+   (env `$EPHEMERIS_WIKI_ROOT` or config's `wiki_root`, defaulting to
+   `~/.claude/ephemeris/wiki`).
+4. `~/.claude/ephemeris/default-schema.md` — shipped default.
 
-### 2. List pending sessions
+### 2. Resolve sources
 
-`<staging_root>` is `$EPHEMERIS_STAGING_ROOT` if set and non-empty, else
-`~/.claude/ephemeris/staging`.
+`Bash: /usr/bin/env python3 -m ephemeris.cli list-sources --config <path>`
+prints one line per resolved source:
 
-Transcripts are captured by the hooks into one of two per-hook-type
-subdirectories:
+    <source-id>\t<kind>\t<root>
 
-- `<staging_root>/session-end/<session-id>.jsonl` — written by the `SessionEnd` hook
-- `<staging_root>/pre-compact/<session-id>.jsonl` — written by the `PreCompact` hook
+When `$ARGUMENTS` is a single path, ignore the config and treat the path
+according to the auto-detection rules in "Invocation forms" above. When
+`$ARGUMENTS` is empty, walk every source.
 
-After successful ingest each file is moved to a sibling `processed/` directory,
-e.g. `<staging_root>/session-end/processed/<session-id>.jsonl`. A file is
-considered **pending** when it lives directly in `<staging_root>/<hook-type>/`
-and is **not** under any `processed/` subdirectory.
+### 3. Enumerate locators
 
-Run `Glob` twice to list the pending files (the single-`*` pattern is
-non-recursive and therefore does not match files under `processed/`):
+For each resolved source, run:
 
-1. `Glob`: `<staging_root>/session-end/*.jsonl`
-2. `Glob`: `<staging_root>/pre-compact/*.jsonl`
+    /usr/bin/env python3 -m ephemeris.cli scan --source <source-id>
 
-Union the two result lists. Remember each path's `<hook-type>` — it is the
-parent directory name and is needed later for the `mv` target.
+This returns one line per pending locator (filtered by cursor watermark
+unless `--ignore-cursor` is passed):
 
-- If `$ARGUMENTS` is non-empty, filter to the session-id matching `$ARGUMENTS`
-  (the filename stem). If zero matches, emit `No staged session matches <id>.`
-  and stop.
-- If the unioned list is empty, emit `No pending sessions to ingest.` and
-  stop.
+    <kind>\t<identifier>\t<when>\t<absolute-path>
 
-### 3. Process each pending session
+If `--session=<id>` was supplied, filter to matching identifier. If
+`--since=<iso>` was supplied, drop locators with `when` earlier than the ISO
+date.
 
-For each JSONL path in the pending list:
+If the union is empty, emit `No pending content to ingest.` and stop.
 
-a. `Read` the JSONL transcript.
+### 4. Process each locator
 
-b. Reason over the transcript against the schema. Extract the decisions,
-   entities, and topics the schema defines. This is the model work this session
-   does directly — no subprocess.
+For each locator:
+
+a. `Bash: /usr/bin/env python3 -m ephemeris.cli read --source <source-id>
+   --identifier <identifier>` returns a JSON document with
+   `{raw_text, structured_sections, metadata}`. Read it.
+
+b. Reason over `raw_text` (and any `structured_sections` block) against the
+   schema. Extract decisions, entities, and topics per the schema's contract.
 
 c. For each extracted page:
-   - Compute the canonical filename per the schema:
-     - Decisions → appended to `<wiki_root>/DECISIONS.md`
-     - Topics → `<wiki_root>/topics/<kebab-case>.md`
-     - Entities → `<wiki_root>/entities/<PascalCase>.md`
+   - Compute the canonical filename per the schema (`DECISIONS.md`,
+     `topics/<kebab>.md`, `entities/<Pascal>.md`).
    - `Glob` `<wiki_root>/**/<canonical-name>` to check existence.
-   - **If exists:** `Read` the page, merge the new content into the appropriate
-     section (preserve all prior content; flag contradictions inline using the
-     schema's contradiction marker), then `Write` the merged content back to
-     the same path.
-   - **If new:** build content from the schema's page template and `Write` it
-     to the target path.
-   - Append a citation to the page's `## Sessions` block: `> Source: [YYYY-MM-DD session-id]`.
+   - **If exists:** `Read`, merge new content into the appropriate section,
+     `Write` back.
+   - **If new:** build content from the schema's page template; `Write`.
+   - Append a citation via:
+     `Bash: /usr/bin/env python3 -m ephemeris.cli cite --page <path>
+     --when <YYYY-MM-DD> --kind <source-kind> --identifier <id>`. The CLI
+     dedups: if a citation for `(when, kind, id)` already exists on the
+     page, no change is made.
 
-d. **Mark consumed** only after all pages for this session have been
-   successfully written. Compute the processed path as
-   `<staging_root>/<hook-type>/processed/<session-id>.jsonl`, then run:
+d. Mark the locator consumed in the cursor:
+   `Bash: /usr/bin/env python3 -m ephemeris.cli mark --source <source-id>
+   --identifier <id> --mtime <epoch>`.
 
-   ```
-   Bash: mkdir -p <staging_root>/<hook-type>/processed && mv <pending_path> <processed_path>
-   ```
+### 5. Error handling
 
-   The `mkdir -p` is idempotent. The `mv` rename is atomic on the same
-   filesystem. `<hook-type>` is the parent directory name of `<pending_path>`
-   (either `session-end` or `pre-compact`) recorded in step 2.
+- Page-write failure on a locator → skip cursor `mark`; the next run will
+  retry. Continue to the next locator.
+- Reasoning produces zero pages → still call `mark` (the locator was
+  processed; it just had no wiki-worthy content). Emit
+  `<id>: 0 pages (no extractable content)`.
 
-### 4. Error handling
+### 6. Summary
 
-- If any `Write` fails, stop processing the current session, do NOT run the
-  `mv`, and continue to the next pending session. The JSONL stays in
-  `<staging_root>/<hook-type>/` (outside any `processed/` subdirectory) and
-  the next run retries it.
-- If reasoning over a transcript produces zero extracted pages, still run the
-  `mv` — the session was processed, it just had no wiki-worthy content. Emit
-  `<session-id>: 0 pages (no extractable content)`.
+After every locator is handled, emit one line per locator:
 
-### 5. Summary
+    <id>: <N> pages created, <M> pages updated, <K> contradictions flagged
 
-After all sessions processed, emit one line per session:
-
-`<session-id>: <N> pages created, <M> pages updated, <K> contradictions flagged`
+End with a totals line.
